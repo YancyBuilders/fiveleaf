@@ -1,0 +1,31 @@
+{
+  "name": "debug-python",
+  "displayName": "Python Debugger",
+  "version": "0.1.0",
+  "description": "Debug Python with debugpy. Install debugpy in the project's environment, then enable this plugin.",
+  "enabled": false,
+  "contributes": {
+    "debugAdapters": [
+      {
+        "id": "debug-python.debugpy",
+        "languages": [
+          "python"
+        ],
+        "command": "python3",
+        "args": [
+          "-m",
+          "debugpy.adapter"
+        ],
+        "launch": {
+          "request": "launch",
+          "program": "${file}",
+          "cwd": "${workspaceFolder}",
+          "console": "internalConsole",
+          "stopOnEntry": true,
+          "justMyCode": true
+        }
+      }
+    ]
+  },
+  "category": "debug-adapters"
+}

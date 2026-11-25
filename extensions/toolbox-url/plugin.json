@@ -1,0 +1,16 @@
+{
+  "name": "toolbox-url",
+  "displayName": "URL",
+  "version": "1.2.0",
+  "category": "tools",
+  "description": "Percent-encode and decode URLs and query values in the DevTool codec workbench.",
+  "enabled": false,
+  "contributes": {
+    "toolbox": {
+      "id": "url",
+      "builtin": "devtool",
+      "features": ["URL", "URI", "encode", "decode", "percent", "query", "编码", "解码", "转义", "查询参数"],
+      "description": "URL encoding and decoding"
+    }
+  }
+}

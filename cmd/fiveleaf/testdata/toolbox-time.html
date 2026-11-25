@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<iframe width="900" height="420" src="/?tools=time#/tool/time"></iframe>
+<output>pending</output>
+<script type="module">
+const frame = document.querySelector('iframe')
+const find = selector => frame.contentDocument.querySelector(selector)
+const rect = element => element.getBoundingClientRect()
+
+async function waitFor(selector) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const element = find(selector)
+    if (element) return element
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  throw Error(`Missing ${selector}`)
+}
+
+function checkPage(first, last) {
+  const panel = find('#tool-body')
+  const bounds = rect(panel)
+  const gap = rect(first).top - bounds.top
+  if (panel.scrollTop !== 0 || gap < 0) throw Error(`${first.className} starts ${gap}px below the panel top at scroll ${panel.scrollTop}`)
+  panel.scrollTop = panel.scrollHeight
+  if (rect(last).bottom > bounds.bottom + 1) throw Error(`${last.className} cannot be scrolled into view`)
+}
+
+try {
+  await waitFor('.converter-row')
+  find('#feature-timezone').click()
+  for (const [width, height] of [[900, 420], [390, 500], [320, 360]]) {
+    frame.width = width
+    frame.height = height
+    await waitFor('.clock-card .time-relative')
+    const clock = find('.hero-time-input-wrap input')
+    if (clock.scrollWidth > clock.clientWidth + 1) throw Error(`Base time is truncated at ${width}px`)
+    checkPage(find('.hero-clock'), find('.clock-grid > :last-child'))
+    find('#feature-timestamp').click()
+    await waitFor('.converter-row')
+    checkPage(find('.hero-clock'), find('.footer-bar'))
+    const firstEnd = rect(find('.converter-row .quick-row')).bottom
+    if (firstEnd > rect(find('.converter-row:last-child')).top) throw Error('Timestamp conversion rows overlap')
+    find('#feature-calculator').click()
+    await waitFor('.calc-card')
+    checkPage(find('.calc-tabs-container'), find('.calc-card'))
+    const panel = find('#tool-body')
+    if (panel.scrollWidth > panel.clientWidth + 1) throw Error(`Calculator overflows horizontally at ${width}px`)
+    find('#feature-timezone').click()
+    await waitFor('.tz-inner')
+  }
+  find('.tz-trigger-btn').click()
+  const drawer = await waitFor('.devtool-extend-drawer')
+  if (drawer.offsetWidth > frame.contentWindow.innerWidth) throw Error('Time zone picker exceeds the window width')
+  document.querySelector('output').textContent = 'pass'
+} catch (error) {
+  document.querySelector('output').textContent = error.message
+}
+</script>

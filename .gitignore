@@ -1,0 +1,13 @@
+/build/
+/.mygo/
+mygo_windows_*.syso
+/fiveleaf
+/cmd/fiveleaf/fiveleaf
+/mayoi
+/cmd/fiveleaf/mayoi
+*.test
+/.agents/
+/.claude/worktrees/
+/.qoder/worktrees/
+
+/.lavish/

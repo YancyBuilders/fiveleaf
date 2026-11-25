@@ -1,0 +1,33 @@
+{
+  "name": "debug-go",
+  "displayName": "Go Debugger",
+  "version": "0.1.0",
+  "description": "Debug Go programs with Delve's DAP server. Install dlv, then enable this plugin.",
+  "enabled": false,
+  "contributes": {
+    "debugAdapters": [
+      {
+        "id": "debug-go.dlv",
+        "languages": [
+          "go"
+        ],
+        "command": "dlv",
+        "args": [
+          "dap"
+        ],
+        "launch": {
+          "request": "launch",
+          "mode": "debug",
+          "program": "${file}",
+          "cwd": "${workspaceFolder}",
+          "stopOnEntry": true
+        },
+        "transport": {
+          "kind": "tcp",
+          "ready": "DAP server listening at: "
+        }
+      }
+    ]
+  },
+  "category": "debug-adapters"
+}

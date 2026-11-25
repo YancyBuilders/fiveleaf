@@ -1,0 +1,17 @@
+{
+  "name": "toolbox-timestamp",
+  "displayName": "Timestamp",
+  "displayNames": {"zh-Hans": "时间戳", "ja": "タイムスタンプ"},
+  "version": "1.2.0",
+  "category": "tools",
+  "description": "Convert Unix timestamps, compare time zones, and calculate elapsed time or offsets.",
+  "enabled": false,
+  "contributes": {
+    "toolbox": {
+      "id": "time",
+      "builtin": "devtool",
+      "features": ["timestamp", "epoch", "Unix", "date", "timezone", "calculator", "时间戳", "时区", "日期", "时间计算"],
+      "description": "Timestamp conversion, time zones and date calculator"
+    }
+  }
+}

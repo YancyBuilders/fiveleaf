@@ -1,0 +1,44 @@
+{
+  "name": "debug-js",
+  "displayName": "JavaScript and TypeScript Debugger",
+  "version": "0.1.1",
+  "description": "Set breakpoints and step through Node.js JavaScript and TypeScript with Microsoft's js-debug.",
+  "enabled": false,
+  "contributes": {
+    "settings": {
+      "nodePath": {
+        "type": "string",
+        "default": "node",
+        "description": "Node.js executable that starts js-debug."
+      }
+    },
+    "debugAdapters": [
+      {
+        "id": "debug-js.jsdebug",
+        "adapterID": "pwa-node",
+        "languages": [
+          "javascript",
+          "typescript",
+          "javascriptreact",
+          "typescriptreact"
+        ],
+        "command": "${settings.nodePath}",
+        "args": ["${pluginDir}/js-debug/src/dapDebugServer.js", "0", "127.0.0.1"],
+        "launch": {
+          "request": "launch",
+          "type": "pwa-node",
+          "program": "${file}",
+          "cwd": "${workspaceFolder}",
+          "console": "internalConsole",
+          "stopOnEntry": false,
+          "sourceMaps": true
+        },
+        "transport": {
+          "kind": "tcp",
+          "ready": "Debug server listening at "
+        }
+      }
+    ]
+  },
+  "category": "debug-adapters"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "toolbox-json",
+  "displayName": "JSON",
+  "version": "1.0.0",
+  "description": "Format and compact JSON with DevTool.",
+  "enabled": false,
+  "contributes": {
+    "toolbox": {
+      "id": "json",
+      "title": "JSON",
+      "builtin": "devtool",
+      "features": ["format", "compact", "convert", "generate types"],
+      "description": "Format, convert and generate types"
+    }
+  },
+  "category": "tools"
+}

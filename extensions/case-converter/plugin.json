@@ -1,0 +1,17 @@
+{
+  "name": "case-converter",
+  "displayName": "Case Converter",
+  "version": "0.1.0",
+  "description": "Change text between upper, lower, title and sentence case in the Toolbox",
+  "enabled": false,
+  "contributes": {
+    "toolbox": {
+      "id": "case.tool",
+      "title": "Case Converter",
+      "page": "index.html",
+      "features": ["upper", "lower", "title", "sentence"],
+      "description": "Upper, lower, title and sentence case"
+    }
+  },
+  "category": "tools"
+}

@@ -1,0 +1,1371 @@
+[
+  {
+    "name": "agent-claude",
+    "displayName": "Claude Agent",
+    "description": "Chat with Claude Code through ACP. Install Node.js and the Claude Code CLI, then sign in with Claude Code. The first connection downloads the adapter.",
+    "category": "agents",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "agent-claude@v1.0.0",
+        "path": "plugins/agents/agent-claude"
+      }
+    ],
+    "tags": [
+      "acp",
+      "agents"
+    ]
+  },
+  {
+    "name": "agent-codex",
+    "displayName": "Codex Agent",
+    "description": "Chat with Codex through ACP. Install Node.js and the Codex CLI, then sign in with Codex. The first connection downloads the adapter.",
+    "category": "agents",
+    "version": "1.1.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.1.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "agent-codex@v1.1.0",
+        "path": "plugins/agents/agent-codex"
+      }
+    ],
+    "tags": [
+      "acp",
+      "agents"
+    ]
+  },
+  {
+    "name": "agent-dsh",
+    "displayName": "DeepSeek TUI (DSH) Agent",
+    "description": "Use the ACP profile of the installed DSH CLI. Configure its model and provider before starting a chat.",
+    "category": "agents",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "agent-dsh@v1.0.0",
+        "path": "plugins/agents/agent-dsh"
+      }
+    ],
+    "tags": [
+      "acp",
+      "agents"
+    ]
+  },
+  {
+    "name": "agent-gemini",
+    "displayName": "Gemini CLI Agent",
+    "description": "Connect the installed Gemini CLI to FiveLeaf over ACP. Sign in and configure a model in Gemini before opening a chat.",
+    "category": "agents",
+    "version": "1.1.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.1.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "agent-gemini@v1.1.0",
+        "path": "plugins/agents/agent-gemini"
+      }
+    ],
+    "tags": [
+      "acp",
+      "agents"
+    ]
+  },
+  {
+    "name": "agent-kimi",
+    "displayName": "Kimi Code Agent",
+    "description": "Connect the installed Kimi Code CLI to FiveLeaf over ACP. Sign in and configure a model in `kimi` before opening a chat.",
+    "category": "agents",
+    "version": "1.1.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.1.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "agent-kimi@v1.1.0",
+        "path": "plugins/agents/agent-kimi"
+      }
+    ],
+    "tags": [
+      "acp",
+      "agents"
+    ]
+  },
+  {
+    "name": "agent-omp",
+    "displayName": "OMP (Oh My Pi) Agent",
+    "description": "Connect the installed Oh My Pi CLI to FiveLeaf. Set up a provider in OMP before starting a chat.",
+    "category": "agents",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "agent-omp@v1.0.0",
+        "path": "plugins/agents/agent-omp"
+      }
+    ],
+    "tags": [
+      "acp",
+      "agents"
+    ]
+  },
+  {
+    "name": "agent-opencode",
+    "displayName": "OpenCode Agent",
+    "description": "Chat with OpenCode through ACP. Requires an installed OpenCode CLI on PATH. Run opencode to connect a provider and choose a model before connecting.",
+    "category": "agents",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "agent-opencode@v1.0.0",
+        "path": "plugins/agents/agent-opencode"
+      }
+    ],
+    "tags": [
+      "acp",
+      "agents"
+    ]
+  },
+  {
+    "name": "agent-pi",
+    "displayName": "Pi Agent",
+    "description": "Connect Pi over ACP. Install Node.js and Pi, then configure a provider in Pi. The first connection downloads the pinned pi-acp adapter.",
+    "category": "agents",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "agent-pi@v1.0.0",
+        "path": "plugins/agents/agent-pi"
+      }
+    ],
+    "tags": [
+      "acp",
+      "agents"
+    ]
+  },
+  {
+    "name": "agent-qwen",
+    "displayName": "Qwen Code Agent",
+    "description": "Connect the installed Qwen Code CLI to FiveLeaf over ACP. Sign in and configure a model in `qwen` before opening a chat.",
+    "category": "agents",
+    "version": "1.1.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.1.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "agent-qwen@v1.1.0",
+        "path": "plugins/agents/agent-qwen"
+      }
+    ],
+    "tags": [
+      "acp",
+      "agents"
+    ]
+  },
+  {
+    "name": "ayu",
+    "displayName": "Ayu",
+    "description": "Warm amber accents with light and dark palettes. Follows light and dark appearance.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "ayu@v1.0.0",
+        "path": "plugins/themes/ayu"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "ayu-icons",
+    "displayName": "Ayu Icons",
+    "description": "Ayu artwork for files and folders in FiveLeaf.",
+    "author": "YancyBuilders",
+    "category": "icon-themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "ayu-icons@v1.0.0",
+        "path": "plugins/icon-themes/ayu-icons"
+      }
+    ],
+    "tags": [
+      "icon-themes",
+      "icons"
+    ]
+  },
+  {
+    "name": "blood-moon",
+    "displayName": "Blood Moon",
+    "description": "Crimson and old gold under a red moon. Dark color theme.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "blood-moon@v1.0.0",
+        "path": "plugins/themes/blood-moon"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "case-converter",
+    "displayName": "Case Converter",
+    "description": "Change text between upper, lower, title and sentence case in the Toolbox",
+    "category": "tools",
+    "version": "0.1.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "0.1.0",
+        "commit": "4b15a07028fba23e5f2847ec7da349bdd7a00727",
+        "ref": "case-converter@v0.1.0",
+        "path": "plugins/tools/case-converter"
+      }
+    ],
+    "tags": [
+      "toolbox",
+      "tools"
+    ]
+  },
+  {
+    "name": "catppuccin-latte-icons",
+    "displayName": "Catppuccin Latte Icons",
+    "description": "Catppuccin Latte artwork for files and folders in FiveLeaf.",
+    "author": "YancyBuilders",
+    "category": "icon-themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "catppuccin-latte-icons@v1.0.0",
+        "path": "plugins/icon-themes/catppuccin-latte-icons"
+      }
+    ],
+    "tags": [
+      "icon-themes",
+      "icons"
+    ]
+  },
+  {
+    "name": "catppuccin-mocha-icons",
+    "displayName": "Catppuccin Mocha Icons",
+    "description": "Catppuccin Mocha artwork for files and folders in FiveLeaf.",
+    "author": "YancyBuilders",
+    "category": "icon-themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "catppuccin-mocha-icons@v1.0.0",
+        "path": "plugins/icon-themes/catppuccin-mocha-icons"
+      }
+    ],
+    "tags": [
+      "icon-themes",
+      "icons"
+    ]
+  },
+  {
+    "name": "claude",
+    "displayName": "Claude",
+    "description": "Ivory and near-black, with Claude's orange. Follows light and dark appearance.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "claude@v1.0.0",
+        "path": "plugins/themes/claude"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "cursor",
+    "displayName": "Cursor",
+    "description": "Cursor's greys, with its blue. Follows light and dark appearance.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "cursor@v1.0.0",
+        "path": "plugins/themes/cursor"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "debug-cpp",
+    "displayName": "C and C++ Debugger",
+    "description": "Debug C and C++ programs with lldb-dap. Build the program first, then enable this plugin.",
+    "category": "debug-adapters",
+    "version": "0.1.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "0.1.0",
+        "commit": "0c56a3af61c07205b77db73979e8829ed008549d",
+        "ref": "debug-cpp@v0.1.0",
+        "path": "plugins/debug-adapters/debug-cpp"
+      }
+    ],
+    "tags": [
+      "debug",
+      "debug-adapters"
+    ]
+  },
+  {
+    "name": "debug-go",
+    "displayName": "Go Debugger",
+    "description": "Debug Go programs with Delve's DAP server. Install dlv, then enable this plugin.",
+    "category": "debug-adapters",
+    "version": "0.1.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "0.1.0",
+        "commit": "0c56a3af61c07205b77db73979e8829ed008549d",
+        "ref": "debug-go@v0.1.0",
+        "path": "plugins/debug-adapters/debug-go"
+      }
+    ],
+    "tags": [
+      "debug",
+      "debug-adapters"
+    ]
+  },
+  {
+    "name": "debug-js",
+    "displayName": "JavaScript and TypeScript Debugger",
+    "description": "Set breakpoints and step through Node.js JavaScript and TypeScript with Microsoft's js-debug.",
+    "category": "debug-adapters",
+    "version": "0.1.1",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "0.1.1",
+        "commit": "c81effff2a651eb02d9e448add5a37d952186282",
+        "ref": "debug-js@v0.1.1",
+        "path": "plugins/debug-adapters/debug-js"
+      },
+      {
+        "version": "0.1.0",
+        "commit": "0c56a3af61c07205b77db73979e8829ed008549d",
+        "ref": "debug-js@v0.1.0",
+        "path": "plugins/debug-adapters/debug-js"
+      }
+    ],
+    "tags": [
+      "debug",
+      "debug-adapters"
+    ]
+  },
+  {
+    "name": "debug-python",
+    "displayName": "Python Debugger",
+    "description": "Debug Python with debugpy. Install debugpy in the project's environment, then enable this plugin.",
+    "category": "debug-adapters",
+    "version": "0.1.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "0.1.0",
+        "commit": "0c56a3af61c07205b77db73979e8829ed008549d",
+        "ref": "debug-python@v0.1.0",
+        "path": "plugins/debug-adapters/debug-python"
+      }
+    ],
+    "tags": [
+      "debug",
+      "debug-adapters"
+    ]
+  },
+  {
+    "name": "debug-rust",
+    "displayName": "Rust Debugger",
+    "description": "Debug Rust programs with lldb-dap. Build with cargo first, then enable this plugin.",
+    "category": "debug-adapters",
+    "version": "0.1.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "0.1.0",
+        "commit": "0c56a3af61c07205b77db73979e8829ed008549d",
+        "ref": "debug-rust@v0.1.0",
+        "path": "plugins/debug-adapters/debug-rust"
+      }
+    ],
+    "tags": [
+      "debug",
+      "debug-adapters"
+    ]
+  },
+  {
+    "name": "fiveleaf-file-icons",
+    "displayName": "FiveLeaf File Icons",
+    "description": "Original FiveLeaf file and folder symbols, tinted by language and color theme.",
+    "author": "YancyBuilders",
+    "category": "icon-themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "fiveleaf-file-icons@v1.0.0",
+        "path": "plugins/icon-themes/fiveleaf-file-icons"
+      }
+    ],
+    "tags": [
+      "icon-themes",
+      "icons"
+    ]
+  },
+  {
+    "name": "format-clang",
+    "displayName": "ClangFormat Formatter",
+    "description": "Format C and C++ sources and headers with clang-format on the workspace machine, using the project's .clang-format style.",
+    "category": "formatters",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "format-clang@v1.0.0",
+        "path": "plugins/formatters/format-clang"
+      }
+    ],
+    "tags": [
+      "formatter",
+      "formatters",
+      "language"
+    ]
+  },
+  {
+    "name": "format-prettier",
+    "displayName": "Prettier Formatter",
+    "description": "Format JavaScript, TypeScript, JSX, TSX, Vue, styles, HTML, JSON, YAML and Markdown with Prettier on the workspace machine.",
+    "category": "formatters",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "format-prettier@v1.0.0",
+        "path": "plugins/formatters/format-prettier"
+      }
+    ],
+    "tags": [
+      "formatter",
+      "formatters",
+      "language"
+    ]
+  },
+  {
+    "name": "format-ruff",
+    "displayName": "Ruff Formatter",
+    "description": "Format Python and stub files with Ruff on the workspace machine, using the project's Ruff configuration.",
+    "category": "formatters",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "format-ruff@v1.0.0",
+        "path": "plugins/formatters/format-ruff"
+      }
+    ],
+    "tags": [
+      "formatter",
+      "formatters",
+      "language"
+    ]
+  },
+  {
+    "name": "grok-bot",
+    "displayName": "Grok Bot",
+    "description": "Grok Bot's Sand: monochrome, with its blue. Follows light and dark appearance.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "grok-bot@v1.0.0",
+        "path": "plugins/themes/grok-bot"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "jack-o-lantern",
+    "displayName": "Jack-o'-Lantern",
+    "description": "Pumpkin orange by candlelight. Dark color theme.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "jack-o-lantern@v1.0.0",
+        "path": "plugins/themes/jack-o-lantern"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "keymap-jetbrains",
+    "displayName": "JetBrains Keymap",
+    "description": "JetBrains keyboard shortcuts for FiveLeaf on macOS, Windows and Linux.",
+    "category": "keymaps",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "keymap-jetbrains@v1.0.0",
+        "path": "plugins/keymaps/keymap-jetbrains"
+      }
+    ],
+    "tags": [
+      "keymap",
+      "keymaps"
+    ]
+  },
+  {
+    "name": "keymap-sublime",
+    "displayName": "Sublime Text Keymap",
+    "description": "Sublime Text keyboard shortcuts for FiveLeaf on macOS, Windows and Linux.",
+    "category": "keymaps",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "keymap-sublime@v1.0.0",
+        "path": "plugins/keymaps/keymap-sublime"
+      }
+    ],
+    "tags": [
+      "keymap",
+      "keymaps"
+    ]
+  },
+  {
+    "name": "keymap-vscode",
+    "displayName": "VS Code Keymap",
+    "description": "VS Code keyboard shortcuts for FiveLeaf on macOS, Windows and Linux.",
+    "category": "keymaps",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "keymap-vscode@v1.0.0",
+        "path": "plugins/keymaps/keymap-vscode"
+      }
+    ],
+    "tags": [
+      "keymap",
+      "keymaps"
+    ]
+  },
+  {
+    "name": "lsp-bash",
+    "displayName": "Bash / Shell Language Server",
+    "description": "Language support through bash-language-server. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-bash@v1.0.0",
+        "path": "plugins/languages/lsp-bash"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-clangd",
+    "displayName": "C / C++ Language Server",
+    "description": "Language support through clangd. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-clangd@v1.0.0",
+        "path": "plugins/languages/lsp-clangd"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-csharp",
+    "displayName": "C# Language Server",
+    "description": "Language support through csharp-ls. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-csharp@v1.0.0",
+        "path": "plugins/languages/lsp-csharp"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-css",
+    "displayName": "CSS / SCSS / Less Language Server",
+    "description": "Language support through vscode-css-language-server. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-css@v1.0.0",
+        "path": "plugins/languages/lsp-css"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-docker",
+    "displayName": "Dockerfile Language Server",
+    "description": "Language support through docker-langserver. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-docker@v1.0.0",
+        "path": "plugins/languages/lsp-docker"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-go",
+    "displayName": "Go Language Server",
+    "description": "Language support through gopls. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-go@v1.0.0",
+        "path": "plugins/languages/lsp-go"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-html",
+    "displayName": "HTML Language Server",
+    "description": "Language support through vscode-html-language-server. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-html@v1.0.0",
+        "path": "plugins/languages/lsp-html"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-java",
+    "displayName": "Java Language Server",
+    "description": "Language support through jdtls. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-java@v1.0.0",
+        "path": "plugins/languages/lsp-java"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-json",
+    "displayName": "JSON / JSONC Language Server",
+    "description": "Language support through vscode-json-language-server. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-json@v1.0.0",
+        "path": "plugins/languages/lsp-json"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-lua",
+    "displayName": "Lua Language Server",
+    "description": "Language support through lua-language-server. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-lua@v1.0.0",
+        "path": "plugins/languages/lsp-lua"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-markdown",
+    "displayName": "Markdown Language Server",
+    "description": "Language support through marksman. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-markdown@v1.0.0",
+        "path": "plugins/languages/lsp-markdown"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-php",
+    "displayName": "PHP Language Server",
+    "description": "Language support through intelephense. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-php@v1.0.0",
+        "path": "plugins/languages/lsp-php"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-python",
+    "displayName": "Python Language Server",
+    "description": "Language support through pyright-langserver. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-python@v1.0.0",
+        "path": "plugins/languages/lsp-python"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-ruby",
+    "displayName": "Ruby Language Server",
+    "description": "Language support through ruby-lsp. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-ruby@v1.0.0",
+        "path": "plugins/languages/lsp-ruby"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-rust",
+    "displayName": "Rust Language Server",
+    "description": "Language support through rust-analyzer. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-rust@v1.0.0",
+        "path": "plugins/languages/lsp-rust"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-svelte",
+    "displayName": "Svelte Language Server",
+    "description": "Language support through svelteserver. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-svelte@v1.0.0",
+        "path": "plugins/languages/lsp-svelte"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-terraform",
+    "displayName": "Terraform Language Server",
+    "description": "Language support through terraform-ls. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-terraform@v1.0.0",
+        "path": "plugins/languages/lsp-terraform"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-toml",
+    "displayName": "TOML Language Server",
+    "description": "Language support through taplo. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-toml@v1.0.0",
+        "path": "plugins/languages/lsp-toml"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-typescript",
+    "displayName": "TypeScript / JavaScript Language Server",
+    "description": "Language support through typescript-language-server. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-typescript@v1.0.0",
+        "path": "plugins/languages/lsp-typescript"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-vue",
+    "displayName": "Vue Language Server",
+    "description": "Vue support through @vue/language-server 2.2.12 in standalone mode. Install the server and workspace TypeScript, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-vue@v1.0.0",
+        "path": "plugins/languages/lsp-vue"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "lsp-yaml",
+    "displayName": "YAML Language Server",
+    "description": "Language support through yaml-language-server. Install the server on the workspace machine, then enable this plugin.",
+    "category": "languages",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "lsp-yaml@v1.0.0",
+        "path": "plugins/languages/lsp-yaml"
+      }
+    ],
+    "tags": [
+      "language",
+      "languages",
+      "lsp"
+    ]
+  },
+  {
+    "name": "material-icons",
+    "displayName": "Material Icon Theme",
+    "description": "Material Icon Theme artwork for files and folders in FiveLeaf.",
+    "author": "YancyBuilders",
+    "category": "icon-themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "material-icons@v1.0.0",
+        "path": "plugins/icon-themes/material-icons"
+      }
+    ],
+    "tags": [
+      "icon-themes",
+      "icons"
+    ]
+  },
+  {
+    "name": "one-dark-pro",
+    "displayName": "One Dark Pro",
+    "description": "Charcoal with vivid blue, green and purple syntax. Dark color theme.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "one-dark-pro@v1.0.0",
+        "path": "plugins/themes/one-dark-pro"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "purple-gold",
+    "displayName": "Purple Gold",
+    "description": "Tyrian purple and gold leaf, with Corona. Dark color theme.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "purple-gold@v1.0.0",
+        "path": "plugins/themes/purple-gold"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "qoder",
+    "displayName": "Qoder",
+    "description": "Qoder's Forest greens. Follows light and dark appearance.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "qoder@v1.0.0",
+        "path": "plugins/themes/qoder"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "seti-icons",
+    "displayName": "Seti Icons",
+    "description": "Seti artwork for files and folders in FiveLeaf.",
+    "author": "YancyBuilders",
+    "category": "icon-themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "seti-icons@v1.0.0",
+        "path": "plugins/icon-themes/seti-icons"
+      }
+    ],
+    "tags": [
+      "icon-themes",
+      "icons"
+    ]
+  },
+  {
+    "name": "the-matrix",
+    "displayName": "The Matrix",
+    "description": "Green code in steel, with the White Rabbit. Dark color theme.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "the-matrix@v1.0.0",
+        "path": "plugins/themes/the-matrix"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "todos",
+    "displayName": "TODOs",
+    "description": "The TODO, FIXME and HACK comments of the folder, in the sidebar",
+    "category": "tools",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "todos@v1.0.0",
+        "path": "plugins/tools/todos"
+      }
+    ],
+    "tags": [
+      "tools"
+    ]
+  },
+  {
+    "name": "toolbox-base64",
+    "displayName": "Base64",
+    "description": "Encode UTF-8 text as Base64 and decode it back to text.",
+    "category": "tools",
+    "version": "1.2.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.2.0",
+        "commit": "9e72a5aede0c2fcbbe98d18ca36ec7c057c8ff31",
+        "ref": "toolbox-base64@v1.2.0",
+        "path": "plugins/tools/toolbox-base64"
+      },
+      {
+        "version": "1.1.0",
+        "commit": "161648266c015e7e1a1bb46271188cb372627270",
+        "ref": "toolbox-base64@v1.1.0",
+        "path": "plugins/tools/toolbox-base64"
+      }
+    ],
+    "tags": [
+      "toolbox",
+      "tools"
+    ]
+  },
+  {
+    "name": "toolbox-json",
+    "displayName": "JSON",
+    "description": "Format JSON, convert data formats and generate types from sample data.",
+    "category": "tools",
+    "version": "1.2.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.2.0",
+        "commit": "9e72a5aede0c2fcbbe98d18ca36ec7c057c8ff31",
+        "ref": "toolbox-json@v1.2.0",
+        "path": "plugins/tools/toolbox-json"
+      },
+      {
+        "version": "1.1.0",
+        "commit": "161648266c015e7e1a1bb46271188cb372627270",
+        "ref": "toolbox-json@v1.1.0",
+        "path": "plugins/tools/toolbox-json"
+      }
+    ],
+    "tags": [
+      "toolbox",
+      "tools"
+    ]
+  },
+  {
+    "name": "toolbox-timestamp",
+    "displayName": "Timestamp",
+    "description": "Convert Unix timestamps, compare time zones, and calculate elapsed time or offsets.",
+    "category": "tools",
+    "version": "1.2.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.2.0",
+        "commit": "9e72a5aede0c2fcbbe98d18ca36ec7c057c8ff31",
+        "ref": "toolbox-timestamp@v1.2.0",
+        "path": "plugins/tools/toolbox-timestamp"
+      },
+      {
+        "version": "1.1.0",
+        "commit": "161648266c015e7e1a1bb46271188cb372627270",
+        "ref": "toolbox-timestamp@v1.1.0",
+        "path": "plugins/tools/toolbox-timestamp"
+      }
+    ],
+    "tags": [
+      "toolbox",
+      "tools"
+    ]
+  },
+  {
+    "name": "toolbox-url",
+    "displayName": "URL",
+    "description": "Percent-encode and decode URLs and query values in the DevTool codec workbench.",
+    "category": "tools",
+    "version": "1.2.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.2.0",
+        "commit": "9e72a5aede0c2fcbbe98d18ca36ec7c057c8ff31",
+        "ref": "toolbox-url@v1.2.0",
+        "path": "plugins/tools/toolbox-url"
+      },
+      {
+        "version": "1.1.0",
+        "commit": "161648266c015e7e1a1bb46271188cb372627270",
+        "ref": "toolbox-url@v1.1.0",
+        "path": "plugins/tools/toolbox-url"
+      }
+    ],
+    "tags": [
+      "toolbox",
+      "tools"
+    ]
+  },
+  {
+    "name": "witchs-brew",
+    "displayName": "Witch's Brew",
+    "description": "Plum dark, with slime green. Dark color theme.",
+    "author": "YancyBuilders",
+    "category": "themes",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "witchs-brew@v1.0.0",
+        "path": "plugins/themes/witchs-brew"
+      }
+    ],
+    "tags": [
+      "theme",
+      "themes"
+    ]
+  },
+  {
+    "name": "word-count",
+    "displayName": "Word Count",
+    "description": "The words of a Markdown or text file and the time to read them, in the status bar",
+    "category": "tools",
+    "version": "1.0.0",
+    "repository": "https://github.com/YancyBuilders/fiveleaf-plugins.git",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "commit": "da87b1afba2cbf30e7564aac4959dddefe547235",
+        "ref": "word-count@v1.0.0",
+        "path": "plugins/tools/word-count"
+      }
+    ],
+    "tags": [
+      "tools"
+    ]
+  }
+]

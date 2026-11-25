@@ -1,0 +1,127 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"time"
+)
+
+// Client is the ff command's side of the socket.
+type Client struct {
+	Socket  string
+	Version string
+	// SettingsPath is the file of the person's preferences, which
+	// `ff settings` changes itself.
+	SettingsPath string
+	Stdin        io.Reader
+	// Start starts the app, which opens paths as it starts, nil for
+	// none.
+	Start func(paths []string) error
+	// Inline leaves a request that only opens paths, with no app
+	// running, to the app starting in this process: Run reports it did
+	// not handle it.
+	Inline bool
+	// Starting is how long the app may take to answer once started.
+	Starting time.Duration
+}
+
+// Run runs the ff command with args, in cwd, and returns its exit
+// status, unless the app is to start in this process, when handled is
+// false.
+func (c Client) Run(args []string, cwd string, stdout, stderr io.Writer) (status int, handled bool) {
+	req, err := Parse(args, cwd)
+	switch {
+	case errors.Is(err, ErrHelp):
+		fmt.Fprint(stdout, Usage)
+		return 0, true
+	case errors.Is(err, ErrVersion):
+		fmt.Fprintln(stdout, "FiveLeaf", c.Version)
+		return 0, true
+	case err != nil:
+		fmt.Fprintf(stderr, "ff: %v\nRun ff --help for the options.\n", err)
+		return 2, true
+	}
+	// The preferences are the command's own: it works with the app not
+	// running, which reads the file again as a FiveLeaf running does.
+	if req.Settings != nil {
+		return doSettings(c, req, stdout, stderr), true
+	}
+	if req.Roles != nil && req.Roles.Action == "socket" {
+		fmt.Fprintln(stdout, c.Socket)
+		return 0, true
+	}
+	if req.Roles != nil && req.Roles.Action == "import" {
+		if err := req.Roles.readBundle(c.Stdin); err != nil {
+			fmt.Fprintf(stderr, "ff: %v\n", err)
+			return 1, true
+		}
+	}
+	reply, err := Ask(c.Socket, req)
+	if errors.Is(err, ErrNotRunning) {
+		if req.Plain() && c.Inline {
+			return 0, false
+		}
+		if req.Plain() && c.Start != nil {
+			paths := make([]string, len(req.Paths))
+			for i, t := range req.Paths {
+				paths[i] = t.Path
+			}
+			if err := c.Start(paths); err != nil {
+				fmt.Fprintf(stderr, "ff: %v\n", err)
+				return 1, true
+			}
+			return 0, true
+		}
+		reply, err = c.startAndAsk(req)
+	}
+	if req.Wait && errors.Is(err, io.ErrUnexpectedEOF) {
+		// The app quit, closing the files.
+		err = nil
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "ff: %v\n", err)
+		return 1, true
+	}
+	fmt.Fprint(stdout, reply.Output)
+	if reply.Error != "" {
+		fmt.Fprintf(stderr, "ff: %s\n", reply.Error)
+		return 1, true
+	}
+	if req.Roles != nil {
+		var pretty bytes.Buffer
+		if err := json.Indent(&pretty, reply.Data, "", "  "); err != nil {
+			fmt.Fprintln(stderr, "ff: the running FiveLeaf did not return a role API response")
+			return 1, true
+		}
+		fmt.Fprintln(stdout, pretty.String())
+	}
+	return 0, true
+}
+
+// startAndAsk starts the app with nothing to open and asks it once it
+// answers.
+func (c Client) startAndAsk(req Request) (Reply, error) {
+	if c.Start == nil {
+		return Reply{}, ErrNotRunning
+	}
+	if err := c.Start(nil); err != nil {
+		return Reply{}, err
+	}
+	wait := c.Starting
+	if wait == 0 {
+		wait = 20 * time.Second
+	}
+	for deadline := time.Now().Add(wait); ; {
+		reply, err := Ask(c.Socket, req)
+		if !errors.Is(err, ErrNotRunning) {
+			return reply, err
+		}
+		if time.Now().After(deadline) {
+			return Reply{}, errors.New("the app started but did not answer")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}

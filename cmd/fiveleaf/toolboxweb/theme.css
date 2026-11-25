@@ -1,0 +1,86 @@
+:root {
+  --ff-editor: Canvas;
+  --ff-panel: ButtonFace;
+  --ff-surface: Field;
+  --ff-text: CanvasText;
+  --ff-muted: GrayText;
+  --ff-border: ButtonBorder;
+  --ff-hover: ButtonFace;
+  --ff-active: ButtonFace;
+  --ff-accent: AccentColor;
+  --ff-fill: Highlight;
+  --ff-fill-hover: Highlight;
+  --ff-on-fill: HighlightText;
+  --ff-selection: Highlight;
+}
+
+html[data-theme], html[data-theme] #root {
+  --devtool-background-color: var(--ff-editor);
+  --devtool-color-primary-theme: var(--ff-text);
+  --devtool-color-secondary-theme: var(--ff-muted);
+  --devtool-border-color-theme: var(--ff-border);
+  --devtool-placeholder-text-color-theme: var(--ff-muted);
+  --devtool-text-color: var(--ff-text);
+  --devtool-color-text: var(--ff-text);
+  --devtool-info-color: var(--ff-muted);
+  --devtool-block-title-bg-color: var(--ff-panel);
+  --devtool-block-content-bg-color: var(--ff-surface);
+  --devtool-card: var(--ff-surface);
+  --devtool-form-element-background-color: var(--ff-editor);
+  --devtool-form-element-active-background-color: var(--ff-editor);
+  --devtool-dropdown-background-color: var(--ff-surface);
+  --devtool-dropdown-hover-background-color: var(--ff-hover);
+  --devtool-glass-bg: var(--ff-panel);
+  --devtool-glass-border: var(--ff-border);
+  --devtool-mask-color: color-mix(in srgb, var(--ff-panel) 90%, transparent);
+  --devtool-primary: var(--ff-accent);
+  --devtool-primary-hover: var(--ff-accent);
+  --devtool-accent: var(--ff-accent);
+  --devtool-accent-2: var(--ff-accent);
+  --devtool-primary-focus: var(--ff-active);
+  --devtool-inactive-tab-bg: var(--ff-panel);
+  --devtool-inactive-tab-color: var(--ff-muted);
+  --devtool-inactive-tab-hover-bg: var(--ff-hover);
+  --devtool-inactive-tab-hover-color: var(--ff-text);
+  --devtool-primary-gradient: linear-gradient(135deg, var(--ff-fill), var(--ff-fill-hover));
+  --devtool-brand-gradient: var(--devtool-primary-gradient);
+  --devtool-gradient-aurora: var(--devtool-primary-gradient);
+  --devtool-gradient-mint: var(--devtool-primary-gradient);
+  --devtool-gradient-ocean: var(--devtool-primary-gradient);
+  --devtool-gradient-sunset: var(--devtool-primary-gradient);
+  --devtool-glow-primary: 0 0 0 1px var(--ff-accent);
+  --devtool-glow-accent: var(--devtool-glow-primary);
+  --devtool-shadow-sm: none;
+  --devtool-shadow-md: none;
+  --devtool-success: var(--ff-success);
+  --devtool-warning: var(--ff-warning);
+  --devtool-danger: var(--ff-danger);
+  --color: var(--ff-text);
+  --background-color: var(--ff-editor);
+  background-color: var(--ff-editor);
+  color: var(--ff-text);
+  accent-color: var(--ff-accent);
+}
+
+#root ::selection { background: var(--ff-selection); color: var(--ff-text); }
+#root .devtool-feature-tab-slider { background: var(--ff-fill); border: 0; box-shadow: none; }
+#root .devtool-feature-tab-slider::after { background: none; }
+#root .devtool-feature-tab.is-active { color: var(--ff-on-fill); text-shadow: none; }
+#root .devtool-feature-tab:hover:not(.is-active) { transform: none; border-color: var(--ff-border); }
+
+#root :is(.hero-clock, .clock-card.is-source, .diff-result, .op-result, .jw-toolbar) { background: var(--ff-surface); }
+#root .hero-number { background: none; color: var(--ff-accent); -webkit-text-fill-color: currentColor; }
+#root :is(.calc-card-banner, .calc-tab-dot, [class*="analyze-indicator-"], [class*="tz-indicator-"]) { background: var(--ff-accent) !important; box-shadow: none; }
+#root .calc-tab-btn.active .calc-tab-dot { background: currentColor !important; }
+#root :is(.segment-btn.active, .calc-tab-btn.active, .op-seg-btn.active, .poor-unit-btn.active,
+          .tz-drawer-item-active .tz-drawer-offset, .row-num, .hover-copy-badge, .dt-day.is-selected,
+          .dt-confirm-btn, .jw-btn.active, .jw-btn.is-primary, .jw-seg-item.is-active,
+          .devtool-codec-badge, .devtool-input-modebar-enc-chip.active, .devtool-m-seg-btn.active) {
+  background: var(--ff-fill) !important; color: var(--ff-on-fill) !important; box-shadow: none;
+}
+#root :is(.tz-drawer-item-active, .converter-result-card:hover, .jw-btn.is-accent:hover) { background: var(--ff-active) !important; }
+#root .devtool-button[data-type=primary] button { background: var(--ff-fill) !important; color: var(--ff-on-fill); box-shadow: none !important; }
+#root .devtool-button[data-type=primary] button:hover:not(:disabled) { background: var(--ff-fill-hover) !important; }
+#root :is(.hero-pause, .day-today) { color: var(--ff-success); background: color-mix(in srgb, var(--ff-success) 12%, var(--ff-surface)); }
+#root :is(.hero-pause.paused, .day-tomorrow, .tz-warn-banner, .tz-warn-banner code) { color: var(--ff-warning); background: color-mix(in srgb, var(--ff-warning) 12%, var(--ff-surface)); }
+#root :is(.devtool-text-input-surface, .devtool-text-output-surface, .jw-pane-body, .devtool-editor-fallback) { color: var(--ff-text); background: var(--ff-editor); }

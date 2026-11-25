@@ -1,0 +1,16 @@
+{
+  "name": "toolbox-base64",
+  "displayName": "Base64",
+  "version": "1.2.0",
+  "category": "tools",
+  "description": "Encode UTF-8 text as Base64 and decode it back to text.",
+  "enabled": false,
+  "contributes": {
+    "toolbox": {
+      "id": "base64",
+      "builtin": "devtool",
+      "features": ["UTF-8", "encode", "decode", "b64", "编码", "解码"],
+      "description": "Encode and decode text"
+    }
+  }
+}

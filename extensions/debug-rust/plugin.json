@@ -1,0 +1,25 @@
+{
+  "name": "debug-rust",
+  "displayName": "Rust Debugger",
+  "version": "0.1.0",
+  "description": "Debug Rust programs with lldb-dap. Build with cargo first, then enable this plugin.",
+  "enabled": false,
+  "contributes": {
+    "debugAdapters": [
+      {
+        "id": "debug-rust.lldb",
+        "languages": [
+          "rust"
+        ],
+        "command": "lldb-dap",
+        "launch": {
+          "request": "launch",
+          "program": "${workspaceFolder}/target/debug/app",
+          "cwd": "${workspaceFolder}",
+          "stopOnEntry": false
+        }
+      }
+    ]
+  },
+  "category": "debug-adapters"
+}

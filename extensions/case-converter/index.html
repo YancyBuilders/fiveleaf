@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Case Converter</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <nav aria-label="Case">
+      <button type="button" data-case="upper" aria-pressed="true">UPPER</button>
+      <button type="button" data-case="lower">lower</button>
+      <button type="button" data-case="title">Title</button>
+      <button type="button" data-case="sentence">Sentence</button>
+    </nav>
+    <label for="source">Text</label>
+    <textarea id="source" rows="10" spellcheck="false">Hello from the FiveLeaf Toolbox.</textarea>
+    <div class="result">
+      <output id="result" for="source">HELLO FROM THE FIVELEAF TOOLBOX.</output>
+      <button id="copy" type="button">Copy</button>
+    </div>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

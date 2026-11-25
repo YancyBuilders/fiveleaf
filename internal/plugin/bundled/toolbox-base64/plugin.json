@@ -1,0 +1,17 @@
+{
+  "name": "toolbox-base64",
+  "displayName": "Base64",
+  "version": "1.0.0",
+  "description": "Encode and decode Base64 with DevTool.",
+  "enabled": false,
+  "contributes": {
+    "toolbox": {
+      "id": "base64",
+      "title": "Base64",
+      "builtin": "devtool",
+      "features": ["base64", "encoder", "decoder"],
+      "description": "UTF-8 text, encoded and decoded"
+    }
+  },
+  "category": "tools"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "toolbox-url",
+  "displayName": "URL",
+  "version": "1.0.0",
+  "description": "Encode and decode URLs with DevTool.",
+  "enabled": false,
+  "contributes": {
+    "toolbox": {
+      "id": "url",
+      "title": "URL",
+      "builtin": "devtool",
+      "features": ["url", "encoder", "decoder"],
+      "description": "URLs and query strings, escaped and read"
+    }
+  },
+  "category": "tools"
+}

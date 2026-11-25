@@ -1,0 +1,274 @@
+# Builds FiveLeaf for macOS, Windows and Linux when a v* tag is pushed
+# (scripts/bump.sh pushes one) and publishes them. Signed updates use the
+# publisher's repository variable or the updates configuration in mygo.json.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # the release, and the uploads to it
+
+concurrency: release
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the tag against mygo.json and CHANGELOG.md
+        run: |
+          version="$(jq -r .version mygo.json)"
+          test "$GITHUB_REF_NAME" = "v$version" || { echo "::error::tag $GITHUB_REF_NAME, but mygo.json has $version"; exit 1; }
+          grep -q "^## $version\$" CHANGELOG.md || { echo "::error::CHANGELOG.md has no ## $version section"; exit 1; }
+      # The notes of the release are the version's section of CHANGELOG.md.
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --draft --verify-tag --title "FiveLeaf ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
+  build:
+    needs: draft-release
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS, os: macos-latest, platform: "darwin/arm64,darwin/amd64" }
+          - { name: Windows, os: ubuntu-latest, platform: "windows/amd64,windows/arm64" }
+          - { name: Linux, os: ubuntu-latest, platform: "linux/amd64,linux/arm64" }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install NSIS, for the Windows installers
+        if: matrix.name == 'Windows'
+        # Tries again, as the runner's mirrors at times fail to resolve.
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get -o Acquire::Retries=3 update && sudo apt-get -o Acquire::Retries=3 install -y nsis && exit 0
+            sleep 15
+          done
+          exit 1
+      # Without signing credentials, macOS builds stay signed ad hoc.
+      - name: Import the certificate and the notary credentials
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_CERTIFICATE" ]; then
+            echo "No macOS signing certificate configured; building with ad hoc signing."
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          curl -fsSL -o "$RUNNER_TEMP/DeveloperIDG2CA.cer" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$keychain" || true
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" login.keychain
+          xcrun notarytool store-credentials notary --keychain "$keychain" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)"
+          test -n "$identity" || { echo "::error::no Developer ID Application identity in MACOS_CERTIFICATE"; exit 1; }
+          jq --arg identity "$identity" --arg keychain "$keychain" \
+            '.macos.signingIdentity = $identity | .macos.notarize = {keychainProfile: "notary", keychain: $keychain}' \
+            mygo.json > "$RUNNER_TEMP/mygo.json"
+          mv "$RUNNER_TEMP/mygo.json" mygo.json
+      - name: Configure the GitHub update feed
+        id: updates
+        env:
+          MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
+          RELEASE_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ -n "$MYGO_UPDATER_PUBLIC_KEY" ] && jq -e '.updates == null' mygo.json > /dev/null; then
+            jq --arg repo "$GITHUB_REPOSITORY" --arg key "$MYGO_UPDATER_PUBLIC_KEY" \
+              '.updates = {github: $repo, publicKey: $key}' mygo.json > "$RUNNER_TEMP/mygo-updates.json"
+            mv "$RUNNER_TEMP/mygo-updates.json" mygo.json
+          fi
+          if jq -e --arg repo "$GITHUB_REPOSITORY" '
+            (.updates.github // "" | ascii_downcase) == ($repo | ascii_downcase)
+            and ((.updates.tagPrefix // "") | . == "" or . == "v")
+          ' mygo.json > /dev/null; then
+            ref="refs/heads/$RELEASE_DEFAULT_BRANCH"
+            git check-ref-format "$ref" || { echo "::error::Invalid default branch ref"; exit 1; }
+            path="$(jq -rn --arg ref "$ref" '$ref | split("/") | map(@uri) | join("/")')"
+            echo "policy_flag=-X main.updatePolicyURL=https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$path/update-policy.json" >> "$GITHUB_OUTPUT"
+          fi
+      # An update feed needs this fork's signing key; ordinary builds do not.
+      - name: Check the update signing key
+        env:
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: |
+          if jq -e '.updates != null' mygo.json > /dev/null; then
+            test -n "$MYGO_UPDATER_PRIVATE_KEY" || { echo "::error::MYGO_UPDATER_PRIVATE_KEY is not set"; exit 1; }
+          fi
+      # Each build writes a SHA256SUMS of its files, which the upload job
+      # merges: builds that each uploaded their own, as mygo build -upload
+      # does, raced to replace the release's, losing lines or failing.
+      - name: Build
+        env:
+          GH_TOKEN: ${{ github.token }} # finds the published versions that delta updates start from
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          MYGO_LDFLAGS: >-
+            -X main.repoURL=https://github.com/${{ github.repository }}
+            ${{ steps.updates.outputs.policy_flag }}
+        run: go tool mygo build -platform "${{ matrix.platform }}"
+      # MyGo only writes checksums when updates are configured.
+      - name: Create checksums for builds without an update feed
+        shell: bash
+        run: |
+          if [ ! -f build/SHA256SUMS ]; then
+            shopt -s nullglob
+            for f in build/*/*.dmg build/*/*.deb build/*/*.tar.gz build/*/*-setup-*.exe build/*/install.*; do
+              (cd "$(dirname "$f")" && shasum -a 256 "$(basename "$f")")
+            done | sort -u > build/SHA256SUMS
+            test -s build/SHA256SUMS || { echo "::error::no release packages were built"; exit 1; }
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.name }}
+          path: |
+            build/SHA256SUMS
+            build/*/*.dmg
+            build/*/*.deb
+            build/*/*.tar.gz
+            build/*/*.delta
+            build/*/*-setup-*.exe
+            build/*/install.*
+            build/*/update-*.json
+          if-no-files-found: error
+          compression-level: 0
+      - name: Remove the keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          if [ -f "$RUNNER_TEMP/signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+          fi
+
+  # Uploads the files SHA256SUMS lists to the draft release, then the update
+  # manifests, so that they never point at a file that isn't there. The disk
+  # images and installers carry their architecture, so the two builds of a
+  # system keep both.
+  upload:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-*
+          path: dist
+      - name: Upload to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: dist
+        run: |
+          # GitHub fails a request now and then, with a 404 or a 5xx, and one
+          # gh release upload of every file, which clobbers them in parallel,
+          # failed each try of v0.18.0. Files go up one at a time, each tried
+          # three times, and a rerun skips those the release has already.
+          have="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | select(.state == "uploaded") | "\(.digest) \(.name)"')"
+          upload() {
+            local sum
+            sum="sha256:$(sha256sum "$1" | cut -d' ' -f1)"
+            if grep -qxF "$sum $(basename "$1")" <<< "$have"; then
+              echo "$1 is uploaded"
+              return
+            fi
+            for try in 1 2 3; do
+              gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber "$1" && return
+              test "$try" = 3 || sleep $((try * 15))
+            done
+            return 1
+          }
+          # A file that two builds make, as install.sh, must be the same.
+          dup="$(cat */SHA256SUMS | sort -u | awk '{print $2}' | uniq -d)"
+          test -z "$dup" || { echo "::error::the builds made different $dup"; exit 1; }
+          cat */SHA256SUMS | sort -u -k2 > SHA256SUMS
+          files=(SHA256SUMS)
+          while read -r _ name; do
+            f="$(find . -mindepth 3 -type f -name "$name" | head -1)"
+            test -n "$f" || { echo "::error::no build has $name of SHA256SUMS"; exit 1; }
+            files+=("$f")
+          done < SHA256SUMS
+          shopt -s nullglob
+          for f in "${files[@]}" */*/update-*.json; do upload "$f"; done
+
+  publish:
+    needs: upload
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          manifest_assets='.assets[] | select(.name | test("^update-(darwin|linux|windows)-(amd64|arm64)\\.json$"))'
+          manifests="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq "$manifest_assets | \"\(.state) \(.name)\"")"
+          if [ -n "$manifests" ]; then
+            for manifest in update-{darwin,linux,windows}-{amd64,arm64}.json; do
+              grep -qxF "uploaded $manifest" <<< "$manifests" || {
+                echo "::error::Release is missing an uploaded $manifest"
+                exit 1
+              }
+            done
+          else
+            if latest="$(gh api --include "repos/$GITHUB_REPOSITORY/releases/latest" --jq "any($manifest_assets; true)")"; then
+              case "${latest##*$'\n'}" in
+                true)
+                  echo "::error::The current Latest release has an update feed. Restore the update signing configuration before publishing."
+                  exit 1
+                  ;;
+                false) ;;
+                *) echo "::error::Could not read the Latest release's update assets"; exit 1 ;;
+              esac
+            else
+              read -r protocol status _ <<< "$latest"
+              if [[ "$protocol" != HTTP/* || "$status" != 404 ]]; then
+                echo "::error::Could not check the Latest release's update assets"
+                exit 1
+              fi
+            fi
+          fi
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+
+  homebrew:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - name: Update the Homebrew cask from the published disk images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/update-homebrew.sh "${GITHUB_REF_NAME#v}"
+      - name: Commit the cask
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/fiveleaf.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "Update Homebrew cask to ${GITHUB_REF_NAME#v}"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi

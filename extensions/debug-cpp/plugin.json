@@ -1,0 +1,26 @@
+{
+  "name": "debug-cpp",
+  "displayName": "C and C++ Debugger",
+  "version": "0.1.0",
+  "description": "Debug C and C++ programs with lldb-dap. Build the program first, then enable this plugin.",
+  "enabled": false,
+  "contributes": {
+    "debugAdapters": [
+      {
+        "id": "debug-cpp.lldb",
+        "languages": [
+          "c",
+          "cpp"
+        ],
+        "command": "lldb-dap",
+        "launch": {
+          "request": "launch",
+          "program": "${workspaceFolder}/a.out",
+          "cwd": "${workspaceFolder}",
+          "stopOnEntry": false
+        }
+      }
+    ]
+  },
+  "category": "debug-adapters"
+}

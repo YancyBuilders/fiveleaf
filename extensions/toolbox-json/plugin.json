@@ -1,0 +1,17 @@
+{
+  "name": "toolbox-json",
+  "displayName": "JSON",
+  "version": "1.2.0",
+  "category": "tools",
+  "description": "Format JSON, convert data formats and generate types from sample data.",
+  "enabled": false,
+  "contributes": {
+    "toolbox": {
+      "id": "json",
+      "title": "JSON",
+      "builtin": "devtool",
+      "features": ["format", "compact", "convert", "CSV", "XML", "types", "格式化", "压缩", "转换", "类型生成"],
+      "description": "Format, convert and generate types"
+    }
+  }
+}

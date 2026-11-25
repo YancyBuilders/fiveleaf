@@ -1,0 +1,21 @@
+{
+  "name": "toolbox-timestamp",
+  "displayName": "Timestamp",
+  "version": "1.0.0",
+  "displayNames": {
+    "zh-Hans": "时间戳",
+    "ja": "タイムスタンプ"
+  },
+  "description": "View a live clock and convert dates and Unix timestamps with DevTool.",
+  "enabled": false,
+  "contributes": {
+    "toolbox": {
+      "id": "time",
+      "title": "Timestamp",
+      "builtin": "devtool",
+      "features": ["timestamp", "timezone", "calculator"],
+      "description": "Dates, Unix timestamps, time zones and a calculator"
+    }
+  },
+  "category": "tools"
+}
