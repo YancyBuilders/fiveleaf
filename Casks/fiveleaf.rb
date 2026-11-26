@@ -1,9 +1,9 @@
 cask "fiveleaf" do
   arch arm: "arm64", intel: "amd64"
 
-  version "0.1.0"
-  sha256 arm:   "ab707bcd5096476e0c791296f57cbe11e00316fd31e1ac50d162676992afbf3d",
-         intel: "1117fb3c3081e1430694751f49237807ac838a62cb285e937a120841f2450e51"
+  version "0.1.1"
+  sha256 arm:   "919f1a247c6f2854895567cc785263a65fa4eca39c0789a7350bea0eae576a14",
+         intel: "ad504caf21a7de7cc822d7711381f0e3ceb54fd44cf2b188c50325589b36b85b"
 
   url "https://github.com/YancyBuilders/fiveleaf/releases/download/v#{version}/fiveleaf-#{version}-#{arch}.dmg"
   name "FiveLeaf"
