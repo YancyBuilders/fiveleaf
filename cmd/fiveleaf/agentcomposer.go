@@ -19,6 +19,7 @@ func (a *app) agentComposer(c *ui.Context, r *agentChat) {
 	}
 	ui.Column(c.Key("agent-composer")).FillWidth().MaxWidth(agentConversationWidth).AlignSelf(ui.Center).
 		Padding(m.gap, m.inset, bottom, m.inset).Gap(m.gap / 2).Shrink(0).Children(func() {
+		a.agentQueueView(c.Key("queued-follow-up"), r)
 		box := a.chatComposeBox(c.Key("agent-compose-box")).Bind(&r.composeBox).Margin(m.row, 0, 0, 0)
 		if item, over := a.dragOver(box); box.FileDragOver() || over && (item.file != nil || carriable(item.tab)) {
 			box.BorderColor(p.accent)
@@ -43,10 +44,11 @@ func (a *app) agentComposer(c *ui.Context, r *agentChat) {
 		narrow, wide := width < 280, width >= 620
 		box.Children(func() {
 			a.agentDraftFiles(c, r)
-			input := a.chatDraftInput(c.Key("agent-input"), &r.draft, &r.input, locales.AgentPlaceholder()).
-				OnPaste(func(text string) bool { return a.pasteChatAttachment(r, text) })
+			a.agentPasteView(c, r)
+			input := a.chatDraftInput(c.Key("agent-input"), &r.draft, &r.input, locales.AgentPlaceholder())
+			input.OnPaste(func(text string) bool { return a.pasteChatDraft(r, text) })
 			previous := r.draftState
-			if previous.id != 0 && previous.text == r.draft && (previous.id != input.ID() || previous.build+1 < a.builds) {
+			if previous.text == r.draft && (previous.selectionPending || previous.id != 0 && (previous.id != input.ID() || previous.build+1 < a.builds)) {
 				input.SetTextSelection(previous.selection[0], previous.selection[1])
 			}
 			anchor, caret := input.TextAnchorCaret()
@@ -111,10 +113,20 @@ func (a *app) agentComposer(c *ui.Context, r *agentChat) {
 					if len(agentGenericModes(r)) > 0 {
 						a.agentModePicker(c, r, wide)
 					}
-					if canConnect && r.err != "" {
+					if r.stopping || canConnect && r.err != "" {
 						a.agentReconnectButton(c.Key("reconnect"), r, wide)
 					}
 					if r.busy || r.connecting {
+						if r.canQueueDraft() {
+							if a.agentSendButton(c, uiicons.ListPlus(), locales.AgentQueueFollowUp(), true).Clicked() {
+								turn, generation := r.turn, r.generation
+								a.postChatAction(r, func() {
+									if r.turn == turn && r.generation == generation {
+										a.queueChatDraft(r)
+									}
+								})
+							}
+						}
 						stop := a.agentSendButton(c, iconStopSquare, locales.AgentStop(), false).Disabled(r.stopping)
 						if stop.Clicked() {
 							a.postChatAction(r, func() { a.stopChat(r) })
@@ -147,8 +159,8 @@ func (a *app) agentReconnectButton(c *ui.Context, chat *agentChat, showLabel boo
 	} else {
 		retry = a.iconButtonBase(c, iconRefresh, label, false).Size(28, 28).Border(1, a.pal.border)
 	}
-	if retry.Radius(metrics.radiusFull).Shrink(0).KeepFocus().Tooltip(label).Cursor(ui.CursorPointer).Clicked() {
-		a.postChatAction(chat, func() { a.beginChat(chat, "") })
+	if retry.Radius(metrics.radiusFull).Shrink(0).KeepFocus().Tooltip(label).Cursor(ui.CursorPointer).Disabled(chat.reconnecting).Clicked() {
+		a.postChatAction(chat, func() { a.reconnectChat(chat) })
 	}
 }
 
@@ -314,6 +326,8 @@ func agentTargetStatus(r *agentChat, disabled bool, p *palette) agentStatusMark 
 		return agentStatusMark{locales.AgentDisabled(), uiicons.Ban(), p.muted}
 	case r != nil && len(r.permissions) > 0:
 		return agentStatusMark{locales.AgentPermission(), uiicons.LockKeyhole(), p.modifiedFg}
+	case r != nil && r.stopping:
+		return agentStatusMark{locales.AgentStopping(), uiicons.LoaderCircle(), p.modifiedFg}
 	case r != nil && r.connecting:
 		return agentStatusMark{locales.AgentConnecting(), uiicons.LoaderCircle(), p.modifiedFg}
 	case r != nil && r.busy:

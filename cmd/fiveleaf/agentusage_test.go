@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -41,11 +42,34 @@ func assertAgentContextDetails(hs *harness, used, size int) {
 	hs.settle()
 }
 
+func TestAgentContextCodexTooltipExplainsReportSemantics(t *testing.T) {
+	a := &app{pal: darkPalette().derive(), settings: settings.Default()}
+	chat := &agentChat{connected: &agentProvider{config: settings.AgentServer{Command: "npx", Args: []string{"-y", "@agentclientprotocol/codex-acp@2.7.0"}}},
+		contextUsage: &acp.UsageState{Used: 25000, Size: 100000}}
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Background(a.pal.chrome).Padding(a.pal.metricsOr().inset).Children(func() {
+			a.agentContextUsage(c, chat)
+		})
+	}, 400, 100)
+	step(tt)
+	bounds, found := tt.Find(locales.AgentContext())
+	if !found {
+		t.Fatal("context bar is missing")
+	}
+	tt.Move(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
+	tt.Advance(time.Second)
+	tt.Frame()
+	if !tt.HasText(locales.AgentContextCodexUsageHint()) {
+		t.Fatal("Codex context tooltip did not explain the reported value")
+	}
+}
+
 func TestAgentContextUsageFollowsItsConversation(t *testing.T) {
 	hs := newHarness(t, true)
 	agentViewFixture(hs)
 	a, chat := hs.a, hs.a.agent
 	chat.sessionID = "first"
+	chat.sessionPrompted = true
 	h := agentHandler{app: a, chat: chat, root: a.root, generation: chat.generation}
 	hs.settle()
 	if !hs.tt.HasText(locales.AgentContextCapacity("—")) {
@@ -293,5 +317,88 @@ func TestAgentContextUsageBar(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestAgentContextUsageFollowsCompletedTurnReports(t *testing.T) {
+	for _, tc := range []struct {
+		scenario string
+		used     int
+	}{
+		{scenario: "pi-usage-after-reply", used: 17234},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			hs, _ := agentRoleHarness(t, tc.scenario)
+			chat := hs.a.agent
+			connectAgentModelTest(t, hs)
+			hs.settle()
+			hs.untilLong("empty pre-request report cleared", func() bool { return chat.contextUsage == nil })
+			if chat.contextUsage != nil {
+				t.Fatalf("an empty pre-request report appeared as usage: %+v", chat.contextUsage)
+			}
+			if !hs.tt.HasText(locales.AgentContextCapacity("—")) || hs.tt.HasText("0%") {
+				t.Fatal("an empty pre-request report showed a capacity or zero percentage")
+			}
+			// Let the frame clear a cached zero before the next prompt.
+			hs.settle()
+			lifecycleSend(t, hs, "report context")
+			if chat.err != "" {
+				t.Fatal(chat.err)
+			}
+			want := acp.UsageState{Used: tc.used, Size: 128000}
+			if want.Used > 0 {
+				hs.untilLong("turn context report", func() bool {
+					return chat.contextUsage != nil && *chat.contextUsage == want
+				})
+			}
+			if chat.contextUsage == nil || *chat.contextUsage != want {
+				t.Fatalf("turn report = %+v, want %+v", chat.contextUsage, want)
+			}
+			if !hs.tt.HasText(agentTokenCount(want.Size)) {
+				t.Fatal("context capacity is missing after the reply")
+			}
+		})
+	}
+}
+
+func TestAgentContextCodexUsesInputSplit(t *testing.T) {
+	usage := acp.UsageState{Used: 24574, Size: 996147}
+	prompt := acp.PromptUsage{Input: 20343, CachedInput: 4224}
+	if got := agentContextOccupancy(true, prompt, usage); got != (acp.UsageState{Used: 24567, Size: 996147}) {
+		t.Fatalf("Codex context = %+v, want input split", got)
+	}
+	if got := agentContextOccupancy(false, prompt, usage); got != usage {
+		t.Fatalf("Pi context = %+v, want adapter report", got)
+	}
+	if got := agentContextOccupancy(true, acp.PromptUsage{}, usage); got != usage {
+		t.Fatalf("missing Codex split = %+v, want fallback", got)
+	}
+}
+
+func TestAgentContextPiModelSwitchKeepsReportedWindow(t *testing.T) {
+	hs, _ := agentRoleHarness(t, "pi-usage-model")
+	chat := hs.a.agent
+	connectAgentModelTest(t, hs)
+	chooseAgentModelTest(t, hs, "model-b")
+	hs.untilLong("Pi context after model change", func() bool {
+		return chat.contextUsage != nil && *chat.contextUsage == (acp.UsageState{Used: 12000, Size: 1000000})
+	})
+	if chat.contextUsage == nil || *chat.contextUsage != (acp.UsageState{Used: 12000, Size: 1000000}) {
+		t.Fatalf("Pi context after model change = %+v", chat.contextUsage)
+	}
+}
+
+func TestAgentContextPiCorrectsMaxTokensReport(t *testing.T) {
+	home := t.TempDir()
+	writeAgentContextFixture(t, filepath.Join(home, ".pi", "agent", "models.json"), `{"providers":{"magpie":{"models":[{"id":"tencent-tclaude/hy4flash","contextWindow":960000,"maxTokens":64000}]}}}`)
+	chat := &agentChat{
+		agentTarget:  agentTarget{provider: "pi"},
+		connected:    &agentProvider{config: settings.AgentServer{Command: "pi-acp", Protocol: "acp", Env: map[string]string{"HOME": home}}},
+		currentModel: "magpie/tencent-tclaude/hy4flash",
+		contextUsage: &acp.UsageState{Used: 1200, Size: 64000},
+	}
+	root := t.TempDir()
+	if size, ok := piContextWindow(chat.connected.config, root, chat.currentModel, 64000); !ok || size != 960000 {
+		t.Fatalf("Pi maxTokens report was not corrected: %d, %v", size, ok)
 	}
 }

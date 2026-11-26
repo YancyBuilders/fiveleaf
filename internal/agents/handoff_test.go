@@ -47,6 +47,95 @@ func TestHandoffCodexMirrorsAndRepeatedTurns(t *testing.T) {
 	}
 }
 
+func TestHandoffCodexKeepsPublicAssistantPhase(t *testing.T) {
+	const records = `{"type":"response_item","payload":{"type":"message","role":"user","content":"Question"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"commentary","content":"First update"}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"First update"}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"Second update"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"commentary","content":"Second update"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"analysis","channel":"analysis","content":"Private thought"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"unrecognized","content":"Plain output"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":"Answer"}}`
+	got, err := ReadHandoff(handoffFixture(t, Codex, records))
+	want := []HandoffMessage{
+		{Role: "user", Text: "Question"},
+		{Role: "assistant", Text: "First update", Phase: "commentary"},
+		{Role: "assistant", Text: "Second update", Phase: "commentary"},
+		{Role: "assistant", Text: "Plain output"},
+		{Role: "assistant", Text: "Answer", Phase: "final_answer"},
+	}
+	if err != nil || got.Truncated || !slices.Equal(got.Messages, want) {
+		t.Fatalf("history = %#v, %v; want %#v without truncation", got, err, want)
+	}
+}
+
+func TestHandoffDecodesFirstFiveLeafCodexPrompt(t *testing.T) {
+	const legacyRecord = `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"[user]\n  Original question\n\n[user]\nQuoted text\n\n\n"}]}}`
+	const legacyEvent = `{"type":"event_msg","payload":{"type":"user_message","message":"[user]\n  Original question\n\n[user]\nQuoted text\n\n\n"}}`
+	const legacyBody = "  Original question\n\n[user]\nQuoted text\n"
+	const markedRecord = `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"FiveLeaf conversation context\n\n"},{"type":"input_text","text":"  Check the logs\n\n"}]}}`
+	const markedEvent = `{"type":"event_msg","payload":{"type":"user_message","message":"FiveLeaf conversation context\n\n  Check the logs\n\n"}}`
+	for _, test := range []struct {
+		name, originator, records, first string
+	}{
+		{"LegacyResponseFirst", "fiveleaf", legacyRecord + "\n" + legacyEvent, legacyBody},
+		{"LegacyEventFirst", "fiveleaf", legacyEvent + "\n" + legacyRecord, legacyBody},
+		{"LegacyEventOnly", "fiveleaf", legacyEvent, legacyBody},
+		{"ContextAndQuestion", "fiveleaf", `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"FiveLeaf conversation context\n\n[system]\nEarlier instructions\n\n[user]\nEarlier question\n\n"},{"type":"input_text","text":"  当前问题\n\n[user]\n引用\n\n"}]}}`, "  当前问题\n\n[user]\n引用\n\n"},
+		{"ContextHeaderOnly", "fiveleaf", `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"FiveLeaf conversation context\n\n"},{"type":"input_text","text":"[user]\nLiteral tags\n\n"}]}}`, "[user]\nLiteral tags\n\n"},
+		{"ContextResponseThenEvent", "fiveleaf", markedRecord + "\n" + markedEvent, "  Check the logs\n\n"},
+		{"LiteralInstructions", "fiveleaf", `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"FiveLeaf conversation context\n\n"},{"type":"input_text","text":"# AGENTS.md instructions\nReview these instructions"}]}}`, "# AGENTS.md instructions\nReview these instructions"},
+		{"PlainFirst", "fiveleaf", `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":" \n  A plain question\n  "}]}}`, " \n  A plain question\n  "},
+		{"OtherOriginator", "Codex Desktop", legacyRecord + "\n" + legacyEvent, "[user]\n  Original question\n\n[user]\nQuoted text"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const later = `{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Answer"}]}}
+{"type":"event_msg","payload":{"type":"user_message","message":"[user]\nLiteral follow-up\n\n"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"[user]\nLiteral follow-up\n\n"}]}}
+`
+			data := `{"type":"session_meta","payload":{"id":"handoff-test","cwd":"/work","originator":"` + test.originator + `"}}` + "\n" +
+				`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>details</environment_context>"}]}}` + "\n" +
+				test.records + "\n" + later
+			fixture := handoffFixture(t, Codex, data)
+			session, visible := readCodex(fixture.Transcript)
+			if !visible {
+				t.Fatal("Codex session should be visible")
+			}
+			session.Transcript = fixture.Transcript
+			followUp := "[user]\nLiteral follow-up"
+			if test.originator == "fiveleaf" {
+				followUp += "\n\n"
+			}
+			want := []HandoffMessage{{Role: "user", Text: test.first}, {Role: "assistant", Text: "Answer"}, {Role: "user", Text: followUp}}
+			for _, source := range []Session{fixture, session} {
+				got, err := ReadHandoff(source)
+				if err != nil || got.Truncated || !slices.Equal(got.Messages, want) {
+					t.Fatalf("history from originator %q = %#v, %v; want %#v without truncation", source.Originator, got, err, want)
+				}
+			}
+			if session.Prompt != oneLine(test.first) {
+				t.Fatalf("session prompt = %q; want %q", session.Prompt, oneLine(test.first))
+			}
+			if session.Originator != test.originator {
+				t.Fatalf("originator = %q; want %q", session.Originator, test.originator)
+			}
+		})
+	}
+}
+
+func TestHandoffCodexOriginatorMatchesOuterSession(t *testing.T) {
+	const records = `{"type":"session_meta","payload":{"id":"handoff-test","originator":"Codex Desktop"}}
+{"type":"session_meta","payload":{"id":"inherited","originator":"fiveleaf"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"[user]\nLiteral question\n\n"}]}}`
+	session := handoffFixture(t, Codex, records)
+	session.ID = "inherited"
+	got, err := ReadHandoff(session)
+	want := []HandoffMessage{{Role: "user", Text: "[user]\nLiteral question"}}
+	if err != nil || !slices.Equal(got.Messages, want) {
+		t.Fatalf("using unmatched metadata = %#v, %v; want %#v", got, err, want)
+	}
+}
+
 func TestHandoffReadableMessages(t *testing.T) {
 	for _, test := range []struct {
 		name    string

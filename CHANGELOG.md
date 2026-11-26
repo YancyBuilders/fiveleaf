@@ -5,6 +5,33 @@ needs a `## <version>` section here, or its build fails.
 
 ## Unreleased
 
+- The Agent input has a clearer caret and grows as you paste or type multiple lines.
+- ACP replies keep running while the agent reports progress or waits for your approval.
+- Interrupted ACP replies stay in the transcript with **Restore to input** for the original draft.
+- Codex keeps the same thread across replies so it can compact context automatically.
+- **Context** details show when Codex starts, finishes or fails to compact the conversation.
+- Copying a user message from restored Codex history preserves the original text.
+- Agent chats skip empty thinking rows and group consecutive tool calls.
+- Agent thinking uses a distinct color and a small disclosure arrow on the left.
+- Codex chat labels progress updates and the final reply separately.
+- Stopping an ACP reply keeps the adapter running while it cancels.
+- Use **Reconnect** to restart an ACP adapter that is still waiting to confirm a stop.
+- ACP chats wait for quiet replies by default. You can set an inactivity timeout for an agent.
+- Reconnecting a Codex chat restores its original thread when the adapter supports it.
+- Preview or edit large pastes without filling the Agent input.
+- Queue one follow-up while an ACP reply runs. Stopping pauses the queued message.
+- ACP permission requests stay above the input while you read earlier replies.
+- ACP chats explain empty replies, refusals and output limits in plain text.
+- Resume ACP sessions with adapters that require an empty MCP server list.
+- Context usage keeps reports sent after a reply finishes, hides Pi's empty pre-request zero, and uses Pi's context window instead of its output limit.
+- Resuming Codex from **Sessions** reuses its existing chat and keeps the draft.
+- Tool details show streamed command output and results sent separately by the adapter.
+- Use **View reasoning** below a reply to reopen the reasoning the adapter shared for that turn.
+- Running commands open while they work, then fold when they finish or the reply continues.
+- Reasoning uses smaller muted text, folds when the reply finishes, and opens on request.
+- Avoid two local adapters taking one Codex thread, and explain when another Codex client owns it.
+- Show sign-in only after the adapter reports an authentication error, not merely because it offers login methods.
+
 ## 0.1.0
 
 The first FiveLeaf release, based on Mayoi.

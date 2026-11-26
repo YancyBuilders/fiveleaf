@@ -146,6 +146,22 @@ func (c *Client) UsageState(sessionID string) (UsageState, bool) {
 	return *s.usage, true
 }
 
+// PromptUsage returns the most recent request's input split. It is separate
+// from UsageState because usage_update.used includes generated output for some
+// adapters, which is not context occupancy.
+func (c *Client) PromptUsage(sessionID string) (PromptUsage, bool) {
+	if c.ctx.Err() != nil {
+		return PromptUsage{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.sessions[sessionID]
+	if s == nil || !s.promptTokensAvailable {
+		return PromptUsage{}, false
+	}
+	return PromptUsage{Input: s.promptTokens.Input, CachedInput: s.promptTokens.CachedInput}, true
+}
+
 func legacyModelNotification(sessionID string, s *sessionState) Update {
 	values := make(sdk.SessionConfigSelectOptionsUngrouped, 0, len(s.legacyChoices))
 	for _, choice := range s.legacyChoices {

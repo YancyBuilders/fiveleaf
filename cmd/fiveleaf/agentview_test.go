@@ -194,7 +194,7 @@ func TestAgentRecoveryActionLayout(t *testing.T) {
 				t.Fatal("clicking below the error reconnected")
 			}
 			method := "Sign in with an organization-managed account"
-			chat.authMethods = []agentChoice{{id: "browser", name: method}}
+			chat.authMethods, chat.authRequired = []agentChoice{{id: "browser", name: method}}, true
 			hs.settle()
 			auth := hs.detailBounds(locales.AgentAuthenticate() + ": " + method)
 			if auth.X < message.X-1 || auth.X+auth.W > message.X+message.W+1 || auth.H < 26 {
@@ -211,6 +211,48 @@ func TestAgentRecoveryActionLayout(t *testing.T) {
 				t.Fatalf("reconnect left error %q and draft %q", chat.err, chat.draft)
 			}
 		})
+	}
+}
+
+func TestAgentSessionInUseOffersNewThreadAndKeepsChat(t *testing.T) {
+	hs := newHarness(t, true)
+	agentViewFixture(hs)
+	chat := hs.a.agent
+	chat.messages = []*agentMessage{{role: "user", text: "Keep this history"}, {role: "assistant", text: "Existing answer"}}
+	chat.draft = "Keep this draft"
+	chat.sessionInUse, chat.err = true, locales.AgentSessionInUse()
+	hs.settle()
+	if !hs.tt.HasText(locales.AgentContinueNewThread()) || !hs.tt.HasText(chat.err) || !hs.tt.HasText("Keep this history") {
+		t.Fatal("a session owned by another client did not explain or offer a next action")
+	}
+	if err := hs.tt.Click(locales.AgentContinueNewThread()); err != nil {
+		t.Fatal(err)
+	}
+	hs.untilLong("new thread connection", func() bool { return chat.err == "" })
+	hs.settle()
+	if chat.sessionInUse || chat.codexRecovery != nil || chat.err != "" || len(chat.messages) != 2 || chat.draft != "Keep this draft" {
+		t.Fatalf("new-thread continuation changed visible history or draft: state=%+v", chat)
+	}
+}
+
+func TestAgentPublishedAuthMethodsDoNotRequestSignIn(t *testing.T) {
+	hs := newHarness(t, true)
+	agentViewFixture(hs)
+	chat := hs.a.agent
+	chat.authMethods = []agentChoice{{id: "api", name: "API Key"}, {id: "chatgpt", name: "ChatGPT"}}
+	chat.err = locales.AgentSessionInUse()
+	chat.sessionInUse = true
+	hs.settle()
+	if hs.tt.HasText(locales.AgentAuthenticate()+": API Key") || hs.tt.HasText(locales.AgentAuthenticate()+": ChatGPT") {
+		t.Fatal("published methods looked like an authentication failure")
+	}
+	if !hs.tt.HasText(locales.AgentContinueNewThread()) {
+		t.Fatal("the write-lock error did not offer its own recovery")
+	}
+	chat.err, chat.sessionInUse, chat.authRequired = "The provider rejected the account.", false, true
+	hs.settle()
+	if !hs.tt.HasText(locales.AgentAuthenticate()+": API Key") || hs.tt.HasText(locales.AgentContinueNewThread()) {
+		t.Fatal("an authentication failure did not show sign-in methods or kept the write-lock action")
 	}
 }
 

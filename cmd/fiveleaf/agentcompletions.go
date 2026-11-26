@@ -33,22 +33,43 @@ type chatCompletionToken struct {
 }
 
 func chatCompletionAt(text string, anchor, caret int) chatCompletionToken {
-	if anchor != caret || caret <= 0 || !strings.ContainsAny(text, "@/") {
+	if anchor != caret || caret <= 0 || caret > len(text) || text[0] != '/' && strings.IndexByte(text, '@') < 0 {
 		return chatCompletionToken{}
 	}
-	runes := []rune(text)
-	if caret > len(runes) {
-		return chatCompletionToken{}
-	}
-	for start := caret - 1; start >= 0 && !unicode.IsSpace(runes[start]); start-- {
-		trigger := runes[start]
-		if trigger == '@' && (start == 0 || meetingAtBoundary(runes[start-1]) && runes[start-1] != '/') || trigger == '/' && start == 0 {
-			end := caret
-			for end < len(runes) && !unicode.IsSpace(runes[end]) {
-				end++
-			}
-			return chatCompletionToken{trigger: trigger, start: start, end: end, query: string(runes[start+1 : caret])}
+	cursor, remaining := len(text), caret
+	for index := range text {
+		if remaining == 0 {
+			cursor = index
+			break
 		}
+		remaining--
+	}
+	if remaining != 0 {
+		return chatCompletionToken{}
+	}
+	for offset, start := cursor, caret; offset > 0; {
+		trigger, width := utf8.DecodeLastRuneInString(text[:offset])
+		if unicode.IsSpace(trigger) {
+			break
+		}
+		offset, start = offset-width, start-1
+		if trigger != '@' && !(trigger == '/' && start == 0) {
+			continue
+		}
+		if start > 0 {
+			before, _ := utf8.DecodeLastRuneInString(text[:offset])
+			if !meetingAtBoundary(before) || before == '/' {
+				continue
+			}
+		}
+		end := caret
+		for _, after := range text[cursor:] {
+			if unicode.IsSpace(after) {
+				break
+			}
+			end++
+		}
+		return chatCompletionToken{trigger: trigger, start: start, end: end, query: text[offset+width : cursor]}
 	}
 	return chatCompletionToken{}
 }

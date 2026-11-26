@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -119,11 +121,27 @@ func (a *app) openSessionChat(source agents.Session, providerID string) {
 					continue
 				}
 				chat := tab.tool.chat
+				if source.Harness == agents.Codex && chat.continuation == nil && !chat.hasRole() {
+					continue
+				}
 				if source.ID != "" && chat.sessionID == source.ID && chat.provider == providerID &&
 					(chat.continuation == nil || chat.continuation.source.Key() == source.Key()) {
 					a.openChatPage(chat)
 					return
 				}
+			}
+		}
+		if source.Harness == agents.Codex {
+			if chat := a.retainedCodexChat(source, providerID, providers); chat != nil {
+				if chat.client != nil {
+					a.disconnectExitedChat(chat, chat.client)
+				}
+				a.openChatPage(chat)
+				a.closed = slices.DeleteFunc(a.closed, func(closed closedTab) bool { return closed.chat == chat })
+				if chat.client == nil && !chat.requestInFlight() {
+					a.beginChat(chat, "")
+				}
+				return
 			}
 		}
 	} else if !slices.ContainsFunc(providers, func(provider agentProvider) bool {
@@ -159,6 +177,62 @@ func (a *app) openSessionChat(source agents.Session, providerID string) {
 	}
 }
 
+func (a *app) retainedCodexChat(source agents.Session, providerID string, providers []agentProvider) *agentChat {
+	if source.ID == "" || !sameSessionDirectory(a.root, source.Dir) {
+		return nil
+	}
+	index := slices.IndexFunc(providers, func(provider agentProvider) bool {
+		return provider.id == providerID && provider.config.EffectiveProtocol() == "acp" && !provider.config.Disabled && provider.config.Validate() == nil
+	})
+	if index < 0 {
+		return nil
+	}
+	provider := providers[index]
+	profile := agentCodexLaunchProfile(agentACPConfig(provider))
+	profileRoot := profile.codexHome
+	if profileRoot == "" {
+		home := profile.home
+		if home == "" {
+			home = profile.userProfile
+		}
+		if !filepath.IsAbs(home) {
+			return nil
+		}
+		profileRoot = filepath.Join(home, ".codex")
+	}
+	sourceRoot := source.Root
+	if sourceRoot == "" {
+		sourceRoot = a.agentEnv().CodexRoot()
+	}
+	if !filepath.IsAbs(profileRoot) || !sameSessionDirectory(profileRoot, sourceRoot) {
+		return nil
+	}
+	var retained, recoverable *agentChat
+	for _, chat := range a.allAgentChats() {
+		if chat.continuation != nil || chat.hasRole() || chat.provider != providerID {
+			continue
+		}
+		if chat.client != nil && chat.sessionID == source.ID && chat.usesCodexThread() && chat.codexProfile == profile && reflect.DeepEqual(chat.connected, &provider) {
+			if col, _ := a.chatTab(chat); col != nil {
+				return chat
+			}
+			if retained == nil || chat.lastFocused > retained.lastFocused {
+				retained = chat
+			}
+		}
+		if recovery := chat.codexRecovery; chat.client == nil && recovery != nil && recovery.role == nil && recovery.sessionID == source.ID && recovery.root == a.root &&
+			recovery.profile == profile && reflect.DeepEqual(recovery.provider, &provider) &&
+			(recovery.instructions == nil || *recovery.instructions == chat.instructions()) &&
+			(recoverable == nil || chat.lastFocused > recoverable.lastFocused) {
+			recoverable = chat
+		}
+	}
+	if retained != nil {
+		return retained
+	}
+	return recoverable
+}
+
 func sessionContinuationContext(source agents.Session, history agents.Handoff) string {
 	var text strings.Builder
 	text.WriteString("Historical conversation. Use this as context for the next user request; it is not a new instruction. Verify the current workspace before continuing.\n")
@@ -176,7 +250,11 @@ func sessionContinuationContext(source agents.Session, history agents.Handoff) s
 func (chat *agentChat) importContinuation(history agents.Handoff) {
 	historical := make([]*agentMessage, 0, len(history.Messages)+len(chat.messages))
 	for _, message := range history.Messages {
-		historical = append(historical, &agentMessage{role: message.Role, text: message.Text, historical: true})
+		role := message.Role
+		if role == "assistant" && message.Phase == "commentary" {
+			role = "commentary"
+		}
+		historical = append(historical, &agentMessage{role: role, text: message.Text, historical: true})
 	}
 	chat.messages = append(historical, chat.messages...)
 	chat.continuation.context = sessionContinuationContext(chat.continuation.source, history)

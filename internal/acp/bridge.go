@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	sdk "github.com/coder/acp-go-sdk"
@@ -145,6 +146,11 @@ func (c *Client) cacheSessionUpdate(p Update) bool {
 			s.usage = &UsageState{Used: usage.Used, Size: usage.Size}
 			s.usageRevision++
 		}
+		update := p.Update
+		if watch := s.promptIdle; watch != nil && (update.AgentMessageChunk != nil || update.AgentThoughtChunk != nil ||
+			update.ToolCall != nil || update.ToolCallUpdate != nil || update.Plan != nil || update.UsageUpdate != nil) {
+			watch.deadline = time.Now().Add(watch.timeout)
+		}
 	}
 	return true
 }
@@ -214,6 +220,10 @@ func (c *Client) permission(ctx context.Context, p PermissionRequest) (sdk.Reque
 	defer func() {
 		c.mu.Lock()
 		delete(s.permissions, wait)
+		if watch := s.promptIdle; watch != nil && len(s.permissions) == 0 {
+			watch.deadline = time.Now().Add(watch.timeout)
+			watch.timer.Reset(watch.timeout)
+		}
 		c.mu.Unlock()
 	}()
 	if permissionCtx.Err() != nil {
@@ -252,8 +262,11 @@ func (c *Client) read(ctx context.Context, p ReadRequest) (sdk.ReadTextFileRespo
 	}
 	line, limit := p.Line, p.Limit
 	p.Path, p.Line, p.Limit = path, nil, nil
-	ctx, cancel := c.callbackContext(ctx)
+	ctx, cancel := c.callbackContext(ctx, string(p.SessionId))
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return sdk.ReadTextFileResponse{}, err
+	}
 	text, err := c.handler.ReadTextFile(ctx, p)
 	if err != nil {
 		return sdk.ReadTextFileResponse{}, err
@@ -289,15 +302,39 @@ func (c *Client) write(ctx context.Context, p WriteRequest) (sdk.WriteTextFileRe
 		return sdk.WriteTextFileResponse{}, err
 	}
 	p.Path = path
-	ctx, cancel := c.callbackContext(ctx)
+	ctx, cancel := c.callbackContext(ctx, string(p.SessionId))
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return sdk.WriteTextFileResponse{}, err
+	}
 	return sdk.WriteTextFileResponse{}, c.handler.WriteTextFile(ctx, p)
 }
 
-func (c *Client) callbackContext(parent context.Context) (context.Context, context.CancelFunc) {
+func (c *Client) callbackContext(parent context.Context, sessionID string) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(parent)
-	stop := context.AfterFunc(c.ctx, cancel)
-	return ctx, func() { stop(); cancel() }
+	stopClient := context.AfterFunc(c.ctx, cancel)
+	if c.ctx.Err() != nil {
+		cancel()
+	}
+	c.mu.Lock()
+	session := c.sessions[sessionID]
+	var stop *stoppablePrompt
+	if session != nil {
+		stop = session.promptStop
+	}
+	c.mu.Unlock()
+	if stop == nil {
+		return ctx, func() { stopClient(); cancel() }
+	}
+	stopPrompt := context.AfterFunc(stop.ctx, cancel)
+	if stop.ctx.Err() != nil {
+		cancel()
+	}
+	return ctx, func() {
+		stopClient()
+		stopPrompt()
+		cancel()
+	}
 }
 
 func textLines(text string, line, limit *int) string {

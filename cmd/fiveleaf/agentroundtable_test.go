@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"fiveleaf/internal/agents"
 	"fiveleaf/internal/roundtable"
 	"fiveleaf/internal/settings"
 )
@@ -59,7 +60,20 @@ func TestRoundtableAppProcess(t *testing.T) {
 			}
 			root = req.Params.Cwd
 			if req.Method == "session/load" {
-				enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": req.Params.SessionID, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "server replay"}}}})
+				if os.Getenv("FIVELEAF_TEST_CODEX_REPLAY") == "1" {
+					for index, text := range []string{agents.CodexContextHeader, "[user]\nKeep the literal role marker", "later message"} {
+						messageID := "c23b010e-582a-4d48-bc7d-0f079528b7d1"
+						if index == 2 {
+							messageID = "f578a16d-7735-4a16-b9de-50ed99217c78"
+						}
+						enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+							"sessionId": req.Params.SessionID, "update": map[string]any{"sessionUpdate": "user_message_chunk",
+								"messageId": messageID, "content": map[string]string{"type": "text", "text": text}},
+						}})
+					}
+				} else {
+					enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": req.Params.SessionID, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "server replay"}}}})
+				}
 			}
 		case "session/new":
 			count++

@@ -27,6 +27,7 @@ permission. Right-click **Sessions** and select the chat marked **Permission req
 Codex, Pi, Qoder, Grok, plugins and roundtables. Open it with `view.sessions` without replacing
 the chat in your workspace. Right-click **Sessions** in the sidebar to switch between open chat tabs.
 Double-click an agent chat or choose **Resume** to continue in an editor chat in its original project.
+Resuming a Codex conversation reopens its existing chat when the project and agent configuration match, including drafts and queued input.
 An adapter that supports restoration keeps the original session ID across turns. Other agents use excerpts
 from the local transcript as context. **Continue with…** lets you choose the agent that receives those excerpts.
 
@@ -40,20 +41,39 @@ Opening a chat connects its ACP adapter automatically. Switching back to an open
 reuses that connection. Neither a draft nor imported history is sent until you press
 **Send**. The chat displays the adapter’s startup and reconnection output in the order it arrives.
 CLI programs have no standing connection and start on the first message.
-**Stop** cancels the current reply and disconnects its process. **Reconnect**
-creates a new ACP connection, retaining the visible transcript and recent-message
-context. Closing the project or app cancels all of its conversations.
+**Stop** asks the adapter to cancel the current reply. The connection stays open while the chat waits for the
+original request to finish. Stopping during setup puts the unsent message back in the input and lets setup
+finish. Choose **Reconnect** to restart an adapter while waiting. After an adapter exits, the next **Send**
+also opens a new connection. A Codex adapter that supports restoration reopens the original thread with the
+same configuration. The chat keeps its transcript and draft. Closing the project or app cancels all of its conversations.
+If another Codex client still owns the thread, choose **Continue in a new thread** to keep the transcript and draft.
+Sign-in choices appear only when the adapter reports that authentication is required.
+
+Direct ACP chats wait for replies by default. A configured reply timeout counts time without progress after
+the prompt is sent. New output or tool updates restart it, and waiting for an approval pauses it. When it expires,
+the chat uses the same cancellation as **Stop**. Connection setup has a separate deadline. After an interruption,
+the sent message and partial output stay in the transcript. Choose **Restore to input** on the original message
+to edit its text and attachments before sending it again.
+
+While a reply is running, **Queue follow-up** holds one message for this chat. It sends after the
+current reply finishes normally. Stopping, an error or a disconnect pauses it. Use **Edit queued message** when
+the input is clear to bring back the text and attachments, or remove it from the queue.
 
 Replies render Markdown lists, tables, quotes and fenced code with syntax colors
 from the current theme. Code blocks show their language, scroll long lines within
 the block and offer **Copy code**. **Copy Message** preserves the original Markdown,
 including text beyond the displayed limit. Roundtable replies use the same renderer.
 
-Tool calls appear where they occur in the conversation. Read and search details
-start folded; commands, edits and failures start expanded. Tool rows copy their
-full output, and change-review buttons remain available when details are folded.
-Thinking expands while it streams and folds when the reply continues. Your manual
-expansion choices remain in place when new output arrives or you switch tabs.
+Tool calls appear where they occur in the conversation. Consecutive calls share a disclosure so you can scan a
+completed group or open each result. Failed tool details start expanded. Tool rows copy their full output,
+including streamed command output and results sent separately by the adapter. Expanded calls show the input and
+output available for that call. A command opens while it runs and folds when it finishes or later output arrives.
+Change-review buttons remain available when details are folded.
+Thinking appears in a distinct color once it has content. It expands while it streams and folds when the reply continues.
+Use the arrow on the left to toggle its details, or choose **View reasoning** below a completed reply to return to them.
+Reasoning uses a smaller, muted style than the public reply.
+Codex labels progress updates separately and marks the final reply when the turn finishes.
+Your manual expansion choices remain in place when new output arrives or you switch tabs.
 Scrolling up keeps your reading position; **Jump to Latest**
 returns to the newest output and resumes following it.
 
@@ -61,11 +81,11 @@ When an ACP agent sends a plan, **To-do list** appears above the input and updat
 The header shows how many tasks are complete. Select it to fold or reopen the list, which starts folded in short panes.
 
 Open **Settings → Agent → Conversation settings** for the last focused chat in the project.
-Edit its system prompt, set the context window (1–100 messages, default 10), or clear its transcript
-without changing another split's chat. Only user messages
-and public replies enter this context; tool logs and private thoughts do not.
-New chats use fresh ACP sessions to enforce the context limit, reapplying the selected
-mode and model before sending. A natively resumed chat sends each follow-up to its existing session.
+Edit its system prompt, choose how many recent messages to replay (1–100, default 10), or clear its transcript
+without changing another split's chat. Replay includes user messages and public replies from finished turns.
+Codex and natively resumed chats send follow-ups to the existing session, whose agent manages its own history.
+For a regular Codex chat, the replay limit applies when connecting again or starting a thread with a changed system prompt.
+Other new ACP chats replay recent messages in a fresh session on each turn. FiveLeaf applies the selected mode and model before sending.
 An unavailable selection produces an error. **Clear Chat** clears
 the selected transcript while retaining its draft, role and context settings.
 
@@ -74,7 +94,11 @@ Start a draft with `/` to browse the current agent’s commands. Session command
 
 When an agent offers a model, thinking level or mode selector through ACP, `/model`, `/thinking` and `/mode` give you access to the corresponding choices. Select a value to apply it, or send the setting with its exact value, such as `/thinking high`. An advertised slash command with the same name keeps its agent-defined behavior. Pi’s `/settings`, `/tree` and `/scoped-models` open screens in the Pi terminal.
 
-The compact input stays at the bottom of the conversation, including empty chats.
+The input stays at the bottom of the conversation, including empty chats. It grows as text wraps and scrolls at its height limit.
+Pasting more than 20 lines or 8 KiB at the end of the input adds a collapsible text attachment. Select it to preview
+or remove it. Editing an attachment moves it and any earlier pasted text into the input in order. Sending includes the
+complete remaining attachments after the typed message.
+Permission requests stay above the input while you read older messages.
 Its footer contains the model, Agent and send controls. Wide Agent
 pages also show the workspace directory used by the ACP session; hover for its full path.
 
@@ -132,7 +156,10 @@ sit inside the input's rounded corners. Hover anywhere on the bar for exact toke
 to open **Context** details with exact token counts, percentages, category estimates
 and free space. Free space is total capacity minus reported usage. Unreported
 capacity appears as `—`. Values update when the adapter
-reports them and reset for a new session or disconnect.
+reports them, including reports sent after a reply finishes, and reset for a new session or disconnect.
+Until the first request, system prompts, skills and tool definitions are not included.
+For Codex, this is the most recent request's input context without generated output.
+For Pi, the capacity comes from `contextWindow` in Pi's model catalog, not `maxTokens`.
 
 For Pi, the bar also marks the compaction threshold from the configuration loaded
 for the current session. The default reserves 16,384 tokens; per-model overrides and
@@ -141,6 +168,9 @@ so a fixed percentage is not assumed. The details show the reserved buffer in a
 separate section; it is not counted as used context. The summary also shows how
 many tokens remain before compaction. Configuration is refreshed when a new
 Pi session starts, including follow-up turns and reconnects.
+
+Codex handles automatic compaction on its active thread. **Context** details show compaction reported by Codex.
+Use `/compact` when the adapter advertises the command to compact the current thread on demand.
 
 ACP currently reports the total occupancy without a full category breakdown.
 The details estimate visible conversation content, show unavailable internal
@@ -397,8 +427,9 @@ Omitting `protocol` keeps ACP compatibility. CLI sends a formatted recent-messag
 prompt on stdin and captures stdout, with bounded stderr available for failures.
 Set `promptArgument: true` for a CLI that expects the prompt as its last argument.
 The program must support a non-interactive request and exit after its answer.
-Timeout defaults to 120 seconds and accepts 1–3600 seconds. On Unix, cancellation
-and timeout terminate the process group, including child processes.
+`timeoutSeconds` accepts 1–3600 seconds, or `0` for the default. Direct ACP chats have no default reply timeout.
+CLI jobs and roundtable turns default to 120 seconds. On Unix, stopping or timing out a CLI job terminates its
+process group, including child processes.
 
 An empty working directory uses the project; relative paths resolve from it.
 For ACP, this sets the process directory while the session and editor file
@@ -441,7 +472,7 @@ Existing terminal Agent sessions remain in **Sessions** and can still be resumed
 - Right-click selected code and choose **Add Selection to Agent** to put the exact
   text, file path and line numbers in the draft. With no selection, the editor
   offers **Add File to Agent** instead. Its attachment captures the whole file, including unsaved edits.
-- `Option+Cmd+L` on macOS or `Ctrl+Alt+L` elsewhere adds the selection, or the
+- `Option+Cmd+L` on macOS or `Shift+Ctrl+L` elsewhere adds the selection, or the
   current line if nothing is selected. Explorer files still offer **Add File to Agent**.
   A file still loading must finish before sending.
 - Select lines in a diff and use **Add Selection to Agent** to include both added

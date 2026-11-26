@@ -411,8 +411,9 @@ func (a *app) adapterFor(p agentProvider, m *agentMeeting, model string) roundta
 				if len(tool.changes) != 0 {
 					detail = a.relPath(tool.changes[0].path)
 				}
-				if tool.text != "" {
-					preview, _ := agentVisibleText(tool.text, 4096)
+				output := tool.outputText()
+				if output != "" {
+					preview, _ := agentVisibleText(output, 4096)
 					detail = strings.TrimSpace(detail + "\n" + preview)
 				}
 				h.mu.Lock()
@@ -429,7 +430,7 @@ func (a *app) adapterFor(p agentProvider, m *agentMeeting, model string) roundta
 					}
 					m.reviews[id][tool.id] = slices.Clone(tool.changes)
 				}
-				roundtable.ReportTool(call, roundtable.ToolRecord{ID: tool.id, Title: tool.title, Kind: tool.kind, Status: tool.status, Detail: detail, Note: note, InputOnly: strings.TrimSpace(tool.text) == "" && len(tool.changes) == 0})
+				roundtable.ReportTool(call, roundtable.ToolRecord{ID: tool.id, Title: tool.title, Kind: tool.kind, Status: tool.status, Detail: detail, Note: note, InputOnly: output == "" && len(tool.changes) == 0})
 			}
 		}
 		if err := h.onMain(call, func() error {
@@ -545,21 +546,39 @@ func (h *meetingACPHandler) Update(update acp.Update) {
 
 func chatContext(s *agentChat) []roundtable.Message {
 	var messages []roundtable.Message
-	previousRole := ""
+	var previous *agentMessage
+	failedTurn := false
 	for _, msg := range s.messages {
-		if msg == nil || msg.role == "tool" || msg.historical {
+		if msg == nil || msg.historical {
 			continue
 		}
-		if msg.role == "user" || msg.role == "assistant" {
-			// Tool rows split the display, not the reply's context budget.
-			if msg.role == "assistant" && previousRole == "assistant" {
+		switch msg.role {
+		case "tool", "thought", "thinking":
+			continue
+		case "user":
+			failedTurn = msg.failure != nil
+		}
+		if failedTurn {
+			continue
+		}
+		role := msg.role
+		if role == "commentary" {
+			role = "assistant"
+		}
+		if role == "user" || role == "assistant" {
+			if role == "assistant" && previous != nil && (previous.role == "assistant" || previous.role == "commentary") {
+				separator := ""
+				newStream := previous.streamID != "" && msg.streamID != "" && previous.streamID != msg.streamID
+				if msg.role == "commentary" || previous.role == "commentary" || newStream {
+					separator = "\n\n"
+				}
 				last := &messages[len(messages)-1]
-				last.Text = boundedAgentText(last.Text + msg.text)
+				last.Text = boundedAgentText(last.Text + separator + msg.text)
 			} else {
-				messages = append(messages, roundtable.Message{Role: msg.role, Text: msg.text})
+				messages = append(messages, roundtable.Message{Role: role, Text: msg.text})
 			}
 		}
-		previousRole = msg.role
+		previous = msg
 	}
 	n := s.contextMessages
 	if n <= 0 {
@@ -585,11 +604,7 @@ func chatContext(s *agentChat) []roundtable.Message {
 	if handoff != "" {
 		messages = append([]roundtable.Message{{Role: "user", Text: handoff}}, messages...)
 	}
-	systemPrompt := s.systemPrompt
-	if s.connectedRole != nil {
-		systemPrompt = s.connectedRole.Prompt
-	}
-	if systemPrompt != "" {
+	if systemPrompt := s.instructions(); systemPrompt != "" {
 		messages = append([]roundtable.Message{{Role: "system", Text: boundedAgentText(systemPrompt)}}, messages...)
 	}
 	return messages

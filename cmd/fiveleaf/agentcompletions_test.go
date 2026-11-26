@@ -201,7 +201,7 @@ func TestAgentComposerSlashSessionSettings(t *testing.T) {
 }
 
 func TestAgentCompletionCaretBoundaries(t *testing.T) {
-	for _, draft := range []string{"user@host", "look at src/main.go", "see https://example.org", "done "} {
+	for _, draft := range []string{"user@host", "look at src/main.go", "see https://example.org", "look at path/@source", "done ", "notes\n/status"} {
 		end := utf8.RuneCountInString(draft)
 		if token := chatCompletionAt(draft, end, end); token.trigger != 0 {
 			t.Fatal(draft, token)
@@ -216,5 +216,87 @@ func TestAgentCompletionCaretBoundaries(t *testing.T) {
 	updated, next := token.insert(draft, "@src/main.go")
 	if updated != "请看 @src/main.go 然后继续" || string([]rune(updated)[next:]) != "然后继续" {
 		t.Fatal(updated, next)
+	}
+}
+
+func TestAgentComposerCompletesWithinLongPaste(t *testing.T) {
+	hs, _ := agentRoleHarness(t, "composer-commands")
+	connectAgentModelTest(t, hs)
+	chat := hs.a.agent
+	hs.clickDetail(locales.AgentDraft())
+	logs := "\n" + strings.Repeat("2026-11-25 INFO handled user@host /workspace/request\n", 220)
+	draft := "/st" + logs + "🧪 @go.m"
+	hs.tt.SetClipboard(draft)
+	hs.command("paste")
+	label := locales.AgentPasteText(strings.Count(draft, "\n") + 1)
+	hs.clickDetail(label)
+	hs.clickDetail(locales.AgentPasteEdit())
+	hs.until("pasted workspace file candidate", func() bool { _, ok := hs.tt.Find("@go.mod"); return ok })
+	hs.key(ui.Shift, ui.KeyLeft)
+	if hs.tt.HasText(locales.QuickSearchFiles()) || chat.draft != draft {
+		t.Fatal("a selected character should close autocomplete without changing the draft")
+	}
+	hs.key(0, ui.KeyRight)
+	hs.key(0, ui.KeyTab)
+	fileDraft := "/st" + logs + "🧪 @go.mod "
+	if chat.draft != fileDraft || !hs.tt.Focused(locales.AgentDraft()) {
+		t.Fatal("file completion changed text outside the token or lost focus")
+	}
+	hs.key(ui.Ctrl, ui.KeyHome)
+	for range len("/st") {
+		hs.key(0, ui.KeyRight)
+	}
+	if !hs.tt.HasText("/status") {
+		t.Fatal("slash completion did not follow the cursor to the start of the draft")
+	}
+	hs.key(0, ui.KeyTab)
+	if chat.draft != "/status"+logs+"🧪 @go.mod " || chat.turn != 0 {
+		t.Fatal("slash completion changed pasted text outside the token or sent the draft")
+	}
+}
+
+func TestAgentComposerLongLocalSlashPasteStaysInInput(t *testing.T) {
+	hs, logPath := agentRoleHarness(t, "composer-commands")
+	connectAgentModelTest(t, hs)
+	chat := hs.a.agent
+	hs.clickDetail(locales.AgentDraft())
+	rest := strings.Repeat("keep this note\n", 25)
+	draft := "/model model-b\n" + rest
+	hs.tt.SetClipboard(draft)
+	hs.command("paste")
+	if chat.draft != draft || len(chat.sources.draft.pastes) != 0 {
+		t.Fatal("a local slash instruction moved from the input into a paste attachment")
+	}
+	hs.key(0, ui.KeyEscape)
+	hs.key(0, ui.KeyEnter)
+	hs.untilLong("local model applied", func() bool { return !chat.configuring && chat.currentModel == "model-b" })
+	if chat.draft != rest || chat.turn != 0 {
+		t.Fatalf("applying the setting changed the trailing notes or sent a turn: %q", chat.draft)
+	}
+	for _, event := range agentRoleEvents(t, logPath) {
+		if event.Kind == "prompt" {
+			t.Fatal("a local slash setting became an ACP prompt")
+		}
+	}
+}
+
+func BenchmarkAgentCompletionLargeDraft(b *testing.B) {
+	for _, label := range []string{"path", "email"} {
+		line := "2026-11-25 INFO handled /workspace/request 🧪\n"
+		if label == "email" {
+			line = "2026-11-25 INFO handled user@host 🧪\n"
+		}
+		for _, size := range []int{32 << 10, 256 << 10, 2 << 20} {
+			draft := strings.Repeat(line, size/len(line)) + "done"
+			caret := utf8.RuneCountInString(draft)
+			b.Run(fmt.Sprintf("%s/%d", label, size), func(b *testing.B) {
+				b.ReportAllocs()
+				for range b.N {
+					if token := chatCompletionAt(draft, caret, caret); token.trigger != 0 {
+						b.Fatal(token)
+					}
+				}
+			})
+		}
 	}
 }

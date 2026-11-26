@@ -10,6 +10,7 @@ import (
 	"fiveleaf/internal/highlight"
 	"fiveleaf/internal/settings"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/markdown"
 )
 
 func TestAgentMarkdownRichContent(t *testing.T) {
@@ -18,7 +19,7 @@ func TestAgentMarkdownRichContent(t *testing.T) {
 		"> quoted explanation\n\n| Model | Context |\n|---|---|\n| Pi | 128k |\n"}
 	p, s := darkPalette().derive(), settings.Default()
 	tt := ui.NewTester(func(c *ui.Context) {
-		sharedAgentMarkdown(c, "message", node, p, s)
+		sharedAgentMarkdown(c, "message", node, p, s, false)
 	}, 540, 850)
 	for _, text := range []string{"Result", "Some bold and inline code.", "first item", "second item", "3.", "4.", "quoted explanation", "Model", "Context", "Pi", "128k"} {
 		if !tt.HasText(text) {
@@ -43,7 +44,7 @@ func TestAgentMarkdownCodeCopyLocales(t *testing.T) {
 			node := &viewNode{Text: "```go\n" + code + "```\n"}
 			p, s := darkPalette().derive(), settings.Default()
 			tt := ui.NewTester(func(c *ui.Context) {
-				sharedAgentMarkdown(c, "message", node, p, s)
+				sharedAgentMarkdown(c, "message", node, p, s, false)
 			}, 400, 300)
 			tt.SetLocale(test.locale)
 			if err := tt.Click(test.copy); err != nil {
@@ -133,7 +134,7 @@ func TestAgentMarkdownSafeLinks(t *testing.T) {
 	node := &viewNode{Text: "Open [Docs](https://go.dev).\n\nBlocked [Script](javascript:alert(1)).\n\nBlocked [File](file:///tmp/test.sh).\n\nBlocked [Custom](fiveleaf://run).\n"}
 	p, s := darkPalette().derive(), settings.Default()
 	tt := ui.NewTester(func(c *ui.Context) {
-		sharedAgentMarkdown(c, "message", node, p, s)
+		sharedAgentMarkdown(c, "message", node, p, s, false)
 	}, 400, 400)
 	for _, label := range []string{"Docs", "Script", "File", "Custom"} {
 		if err := tt.Click(label); err != nil {
@@ -152,7 +153,7 @@ func TestAgentMarkdownCodeFitsNarrowConversation(t *testing.T) {
 			node := &viewNode{Text: "```typescript\n" + line + "\n```\n\nAfter the code.\n\n| Name | Value |\n|---|---|\n| Long table | " + strings.Repeat("wide ", 40) + " |\n\nAfter the table."}
 			p, s := darkPalette().derive(), settings.Default()
 			tt := ui.NewTester(func(c *ui.Context) {
-				sharedAgentMarkdown(c, "message", node, p, s)
+				sharedAgentMarkdown(c, "message", node, p, s, false)
 			}, int(width), 800)
 			tt.SetLocale("en")
 			for _, label := range []string{"Code, typescript", "Copy code", "After the code.", "After the table."} {
@@ -196,7 +197,7 @@ func TestAgentMarkdownSyntaxColorsRefresh(t *testing.T) {
 			s.FontSize = 20
 			node := &viewNode{Text: "```go\nconst message = \"hello\" // ready\n```"}
 			tt := ui.NewTester(func(c *ui.Context) {
-				sharedAgentMarkdown(c, "message", node, p, s)
+				sharedAgentMarkdown(c, "message", node, p, s, false)
 			}, 600, 250)
 			tt.SetDark(dark)
 			for name, color := range map[string]ui.Color{"keyword": keyword, "string": literal, "comment": comment} {
@@ -214,6 +215,22 @@ func TestAgentMarkdownSyntaxColorsRefresh(t *testing.T) {
 				t.Errorf("cached code retains the old theme (%d pixels)", n)
 			}
 		})
+	}
+}
+
+func TestAgentThoughtMarkdownIsSmallerMutedText(t *testing.T) {
+	settings := settings.Default()
+	settings.FontSize = 16
+	palette := darkPalette().derive()
+	options := markdown.Options{Theme: &markdown.Theme{
+		FontSize: settings.FontSize, Text: palette.text, Strong: palette.text,
+		Headings: [6]markdown.HeadingStyle{{Color: palette.text}, {Color: palette.text}},
+	}}
+	agentThoughtMarkdown(palette)(&options)
+	theme := options.Theme
+	if theme.FontSize != settings.FontSize-1 || theme.Text != palette.muted || theme.Strong != palette.muted ||
+		theme.Headings[0].Color != palette.muted || theme.Headings[1].Color != palette.muted {
+		t.Fatalf("reasoning theme = %+v", theme)
 	}
 }
 

@@ -160,7 +160,7 @@ func (a *app) commandsIn(t locales.Messages) []command {
 		{"view.agentPage", t.AgentOpenPage(), "", a.openAgentPage},
 		{"agent.newChat", t.AgentNewSession(), "", a.newChatPage},
 		{"agent.configure", t.AgentConfigure(), "", func() { a.host.showSettings(settings.CatAgent, "agentServers") }},
-		{"agent.addSelection", t.CmdAgentAddSelection(), "Alt+CmdOrCtrl+L", a.addAgentSelection},
+		{"agent.addSelection", t.CmdAgentAddSelection(), "Shift+CmdOrCtrl+L", a.addAgentSelection},
 		{"agent.addFile", t.CmdAgentAddFile(), "", func() { a.addAgentFile("") }},
 		{"agent.reviewChanges", t.CmdAgentReviewChanges(), "", func() { a.openChangesTab(true) }},
 		{"agent.addReview", t.CmdAgentAddReview(), "", a.addAgentReview},

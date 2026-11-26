@@ -14,7 +14,8 @@ import (
 )
 
 func (message *agentMessage) exportable() bool {
-	return message != nil && (message.role == "user" || message.role == "assistant") && strings.TrimSpace(message.text) != ""
+	return message != nil && (message.role == "user" || message.role == "assistant" || message.role == "commentary") &&
+		strings.TrimSpace(message.text) != ""
 }
 
 func (a *app) chatExportRow(c *ui.Context, chat *agentChat) {

@@ -178,7 +178,10 @@ func (p *Prefs) mergeRoleDefinitions(roles map[string]AgentRole, presets map[str
 
 func sameAgentDefinition(a, b AgentServer) bool {
 	canonical := func(s AgentServer) []byte {
-		s.Protocol, s.TimeoutSeconds = s.EffectiveProtocol(), s.ReplyTimeoutSeconds()
+		s.Protocol = s.EffectiveProtocol()
+		if s.Protocol == "cli" {
+			s.TimeoutSeconds = s.ReplyTimeoutSeconds()
+		}
 		s.Capabilities = slices.Sorted(slices.Values(s.Capabilities))
 		raw, _ := json.Marshal(s)
 		return raw

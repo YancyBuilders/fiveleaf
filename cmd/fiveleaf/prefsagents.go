@@ -82,7 +82,7 @@ func (w *prefsWindow) editAgentServer(id string) {
 	if w.agentConfigurationEditing() || w.agentIOBusy {
 		return
 	}
-	d := &prefAgentDraft{focus: true, timeout: strconv.Itoa(settings.DefaultAgentTimeoutSeconds)}
+	d := &prefAgentDraft{focus: true, timeout: "0"}
 	if id != "" {
 		server, ok := w.m.s.AgentServers[id]
 		if !ok {
@@ -91,7 +91,7 @@ func (w *prefsWindow) editAgentServer(id string) {
 		d.id, d.name, d.command = id, cmp.Or(server.Name, id), server.Command
 		d.existing, d.original, d.args = true, cloneAgentServer(server), slices.Clone(server.Args)
 		d.protocol, d.cwd, d.capabilities = server.Protocol, server.WorkingDirectory, strings.Join(server.Capabilities, ", ")
-		d.timeout, d.disabled, d.promptArgument = strconv.Itoa(server.ReplyTimeoutSeconds()), server.Disabled, server.PromptArgument
+		d.timeout, d.disabled, d.promptArgument = strconv.Itoa(server.TimeoutSeconds), server.Disabled, server.PromptArgument
 		for _, name := range slices.Sorted(maps.Keys(server.Env)) {
 			d.env = append(d.env, prefAgentVariable{name, server.Env[name]})
 		}
@@ -114,13 +114,11 @@ func (d *prefAgentDraft) definition() (settings.AgentServer, bool) {
 		return server, false
 	}
 	timeout, err := strconv.Atoi(strings.TrimSpace(d.timeout))
-	if err != nil || timeout < 1 || timeout > 3600 {
+	if err != nil || timeout < 0 || timeout > 3600 {
 		d.err, d.field = locales.PrefsAgentTimeoutInvalid(), "timeout"
 		return server, false
 	}
-	if timeout != settings.DefaultAgentTimeoutSeconds || d.original.TimeoutSeconds != 0 {
-		server.TimeoutSeconds = timeout
-	}
+	server.TimeoutSeconds = timeout
 	if strings.TrimSpace(d.capabilities) != "" {
 		for _, tag := range strings.Split(d.capabilities, ",") {
 			server.Capabilities = append(server.Capabilities, strings.TrimSpace(tag))

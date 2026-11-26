@@ -509,18 +509,22 @@ func TestPrefsAgentReplyTimeoutValidation(t *testing.T) {
 	ph.w.editAgentServer("")
 	d := ph.w.agentDraft
 	d.name, d.command = "Timeout Agent", "agent"
-	if d.timeout != "120" {
+	if d.timeout != "0" {
 		t.Fatalf("default reply timeout = %q", d.timeout)
 	}
-	for _, value := range []string{"", "0", "-1", "3601", "1.5", "not a number"} {
+	for _, value := range []string{"", "-1", "3601", "1.5", "not a number"} {
 		d.timeout = value
 		if ph.w.saveAgentServer() || d.field != "timeout" || d.err != locales.PrefsAgentTimeoutInvalid() || len(ph.m.s.AgentServers) != 0 {
 			t.Fatalf("accepted timeout %q or lost its draft error", value)
 		}
 	}
-	d.timeout = "120"
+	d.timeout = "0"
 	definition, ok := d.definition()
 	if !ok || definition.TimeoutSeconds != 0 || definition.Protocol != "" {
 		t.Fatalf("default form rewrote omitted legacy defaults: %+v", definition)
+	}
+	d.timeout = "120"
+	if definition, ok := d.definition(); !ok || definition.TimeoutSeconds != 120 {
+		t.Fatalf("explicit ACP timeout was not saved: %+v", definition)
 	}
 }

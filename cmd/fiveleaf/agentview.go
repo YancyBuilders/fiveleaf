@@ -43,13 +43,16 @@ func (a *app) agentConversationBody(c *ui.Context, r *agentChat, p *palette, hei
 		}
 	})
 	if a.hasChatProject() {
+		m := p.metricsOr()
 		a.agentLatestButton(c, r)
 		if len(r.plan) > 0 {
-			m := p.metricsOr()
 			ui.Column(c.Key("agent-plan-slot")).FillWidth().MaxWidth(agentConversationWidth).AlignSelf(ui.Center).
 				MinWidth(0).MinHeight(0).MaxHeightPercent(30).Padding(0, m.inset).Clip().Children(func() {
 				a.agentPlanView(c, r, height >= 10*m.control)
 			})
+		}
+		if len(r.permissions) > 0 {
+			a.agentPermissionDock(c, r, p, height < 10*m.control)
 		}
 		a.agentComposer(c, r)
 	}
@@ -64,7 +67,12 @@ func (a *app) agentTranscript(c *ui.Context, r *agentChat, p *palette) {
 	if r.observeOutput() {
 		r.keepLatestInView()
 	}
-	empty := len(r.messages) == 0 && len(r.tools) == 0 && len(r.plan) == 0 && len(r.permissions) == 0 &&
+	reading := !r.followingOutput()
+	last := len(r.messages) - 1
+	for last >= 0 && !agentMessageVisible(r.messages[last]) {
+		last--
+	}
+	empty := last < 0 && len(r.tools) == 0 && len(r.plan) == 0 && len(r.permissions) == 0 &&
 		len(r.authMethods) == 0 && r.err == "" && !r.busy && !r.connecting && r.contextLoading == 0
 	needsSetup := !r.hasRole() && len(a.agentProviders()) == 0
 	transcript := ui.Scroll(c.Key("agent-transcript")).TrackScroll(&r.scroll).Grow(1).MinHeight(0).Padding(agentTranscriptInset, 0)
@@ -94,36 +102,88 @@ func (a *app) agentTranscript(c *ui.Context, r *agentChat, p *palette) {
 				a.agentSetupActions(c, ui.Start)
 			}
 			shownTools := make(map[*agentTool]bool)
-			for i, msg := range r.messages {
-				if msg == nil {
+			codex := r.usesCodexThread()
+			hasActivity := false
+			var thought *agentMessage
+			var turnStart int
+			var hadReply bool
+			reviewReasoning := func(turnEnd int) {
+				if thought != nil && hadReply {
+					a.agentReasoningLink(c.Key(struct{ reasoning *agentMessage }{thought}), r, thought, r.messages[turnStart:turnEnd])
+				}
+			}
+			var tools []*agentTool
+			for i := 0; i <= last; {
+				msg := r.messages[i]
+				if !agentMessageVisible(msg) {
+					i++
 					continue
 				}
-				row := ui.Column(c.Key(i)).FillWidth().MinWidth(0)
+				if msg.role == "user" {
+					reviewReasoning(i)
+					thought, hadReply, turnStart = nil, false, i+1
+				}
+				if msg.tool != nil {
+					hasActivity = hasActivity || codex
+					tools = tools[:0]
+					for ; i <= last; i++ {
+						next := r.messages[i]
+						if !agentMessageVisible(next) {
+							continue
+						}
+						if next.tool == nil {
+							break
+						}
+						if !shownTools[next.tool] {
+							shownTools[next.tool] = true
+							tools = append(tools, next.tool)
+						}
+					}
+					a.agentToolRun(c, tools, p, r.busy && i > last, reading)
+					continue
+				}
+				row := ui.Column(c.Key(msg)).FillWidth().MinWidth(0)
+				finalLabel := false
 				switch msg.role {
 				case "user":
+					hasActivity = false
 					turns = append(turns, agentTurnAnchor{prompt: msg, offset: row.Bounds().Y - bodyY})
+				case "commentary":
+					hasActivity = true
+				case "thought", "thinking":
+					if thought == nil {
+						thought = msg
+					}
+					hasActivity = hasActivity || codex
 				case "assistant":
-					if len(turns) > 0 && strings.TrimSpace(msg.text) != "" {
-						turns[len(turns)-1].reply = msg
+					if strings.TrimSpace(msg.text) != "" {
+						hadReply = true
+						finalLabel, hasActivity = hasActivity, false
+						if len(turns) > 0 {
+							turns[len(turns)-1].reply = msg
+						}
 					}
 				}
 				row.Children(func() {
-					if msg.tool != nil {
-						shownTools[msg.tool] = true
-						a.agentToolView(c, msg.tool, p)
-					} else {
-						a.agentMessageView(c, r, msg, r.busy && i == len(r.messages)-1 && msg.role != "user")
+					if finalLabel {
+						metrics := p.metricsOr()
+						ui.Text(c.Key("final-reply"), locales.AgentFinalReply()).FontSize(metrics.textSmall).
+							FontWeight(metrics.weightMedium).TextColor(p.text).Margin(0, 0, metrics.gap, 0)
 					}
+					a.agentMessageView(c, r, msg, r.busy && i == last && msg.role != "user")
 				})
+				i++
 			}
-			for i, tool := range r.tools {
+			if !r.busy {
+				reviewReasoning(len(r.messages))
+			}
+			tools = tools[:0]
+			for _, tool := range r.tools {
 				if tool != nil && !shownTools[tool] {
-					ui.Column(c.Key("tool-extra:" + strconv.Itoa(i))).FillWidth().MinWidth(0).Children(func() {
-						a.agentToolView(c, tool, p)
-					})
+					tools = append(tools, tool)
 				}
 			}
-			a.agentPermissionsView(c, r, p)
+			a.agentToolRun(c, tools, p, r.busy, reading)
 			a.agentRecovery(c, r, p)
 			if r.connecting || r.contextLoading > 0 || r.busy && (len(r.permissions) == 0 || r.stopping) {
 				ui.Row(c.Key("agent-progress")).Gap(7).AlignItems(ui.Center).Children(func() {
@@ -132,11 +192,11 @@ func (a *app) agentTranscript(c *ui.Context, r *agentChat, p *palette) {
 					if r.connecting {
 						status = locales.AgentConnecting()
 					}
-					if r.stopping {
-						status = locales.AgentStopping()
-					}
 					if r.contextLoading > 0 {
 						status = locales.AgentLoadingContext()
+					}
+					if r.stopping {
+						status = locales.AgentStopping()
 					}
 					ui.Text(c, status).FontSize(12).TextColor(p.muted)
 				})
@@ -152,14 +212,46 @@ func (a *app) agentTranscript(c *ui.Context, r *agentChat, p *palette) {
 	}
 }
 
+func (a *app) agentReasoningLink(c *ui.Context, chat *agentChat, first *agentMessage, messages []*agentMessage) {
+	palette := a.pal
+	metrics := palette.metricsOr()
+	label := locales.AgentReviewReasoning()
+	ink := agentThoughtColor(palette)
+	button := ui.ButtonBase(c).AlignSelf(ui.Start).AlignItems(ui.Center).Gap(metrics.gap).Padding(metrics.gap).
+		Label(label).Radius(metrics.radius).Cursor(ui.CursorPointer)
+	if button.Hovered() || button.FocusVisible() {
+		button.Background(palette.hover)
+	}
+	button.Children(func() {
+		ui.Icon(c, uiicons.ChevronUp()).FontSize(metrics.textSmall).TextColor(ink)
+		ui.Text(c, label).FontSize(metrics.textSmall).TextColor(ink)
+	})
+	if button.Clicked() {
+		for _, message := range messages {
+			if message != nil && (message.role == "thought" || message.role == "thinking") {
+				message.expanded, message.expansionSet = true, true
+			}
+		}
+		chat.readingPrompt, chat.focusThought = nil, first
+		a.invalidate()
+	}
+}
+
 func (a *app) agentRecovery(c *ui.Context, chat *agentChat, p *palette) {
-	authenticate := len(chat.authMethods) > 0 && chat.sessionID == ""
+	authenticate := chat.authRequired && len(chat.authMethods) > 0
 	if chat.err == "" && !authenticate {
 		return
 	}
 	ui.Column(c.Key("agent-recovery")).MinWidth(0).Gap(p.metricsOr().pad).Children(func() {
 		if chat.err != "" {
 			ui.Text(c.Key("agent-error"), chat.err).FontSize(12).TextColor(p.dangerFg).Selectable()
+		}
+		if chat.sessionInUse {
+			compactActionRow(c.Key("session-in-use-actions"), ui.Start).Children(func() {
+				if retryButton(c.Key("new-thread"), locales.AgentContinueNewThread()).Clicked() {
+					a.postChatAction(chat, func() { a.continueChatInNewThread(chat) })
+				}
+			})
 		}
 		if !authenticate {
 			return

@@ -26,7 +26,6 @@ type Config struct {
 
 type (
 	InitializeResult   = sdk.InitializeResponse
-	PromptResult       = sdk.PromptResponse
 	ContentBlock       = sdk.ContentBlock
 	Update             = sdk.SessionNotification
 	PermissionRequest  = sdk.RequestPermissionRequest
@@ -39,6 +38,16 @@ type (
 	ModeID             = sdk.SessionModeId
 	PermissionOptionID = sdk.PermissionOptionId
 )
+
+// PromptResult keeps the protocol fields FiveLeaf uses plus the request's
+// token split from adapter metadata.
+type PromptResult struct {
+	Meta          map[string]any `json:"_meta,omitempty"`
+	StopReason    sdk.StopReason `json:"stopReason"`
+	Usage         *sdk.Usage     `json:"usage,omitempty"`
+	UserMessageID *string        `json:"userMessageId,omitempty"`
+	tokens        promptUsage
+}
 
 // Session keeps the stable ACP session fields and the legacy model selector
 // that some adapters still advertise instead of configOptions.
@@ -53,52 +62,105 @@ type Session struct {
 	Models        *SessionModelState        `json:"models,omitempty"`
 }
 
-type ReplayMessage struct{ Role, Text string }
+type ReplayMessage struct {
+	Role, Text      string
+	FirstChunkBytes int
+}
 
 type sessionReplay struct {
-	messages []ReplayMessage
-	current  strings.Builder
-	bytes    int
-	partial  bool
+	messages          []ReplayMessage
+	public, thought   replayStream
+	partial           bool
+	codexThoughtParts bool
+}
+
+type replayStream struct {
+	current   strings.Builder
+	messageID string
+	last      int
+	rows      int
+	bytes     int
+	full      bool
 }
 
 func (replay *sessionReplay) record(update sdk.SessionUpdate) {
 	role := "user"
 	var block ContentBlock
+	var messageID *string
 	switch {
 	case update.UserMessageChunk != nil:
 		block = update.UserMessageChunk.Content
+		messageID = update.UserMessageChunk.MessageId
 	case update.AgentMessageChunk != nil:
 		block, role = update.AgentMessageChunk.Content, "assistant"
+		messageID = update.AgentMessageChunk.MessageId
+	case update.AgentThoughtChunk != nil:
+		block, role = update.AgentThoughtChunk.Content, "thought"
+		messageID = update.AgentThoughtChunk.MessageId
 	default:
 		return
 	}
-	if block.Text == nil || block.Text.Text == "" {
+	if block.Text == nil || block.Text.Text == "" || replay.public.full {
 		return
 	}
-	const maxMessages, maxBytes = 96, 96 << 10
-	if replay.partial || replay.bytes == maxBytes {
-		replay.partial = true
-		return
+	stream, maxMessages, maxBytes := &replay.public, 96, 96<<10
+	if role == "thought" {
+		stream, maxMessages, maxBytes = &replay.thought, 24, 24<<10
 	}
-	if len(replay.messages) == 0 || replay.messages[len(replay.messages)-1].Role != role {
-		if len(replay.messages) == maxMessages {
-			replay.partial = true
-			return
-		}
-		replay.current.Reset()
-		replay.messages = append(replay.messages, ReplayMessage{Role: role})
+	id := ""
+	if messageID != nil {
+		id = *messageID
 	}
 	text := block.Text.Text
-	if room := maxBytes - replay.bytes; len(text) > room {
+	last := stream.last
+	newMessage := last == 0 || replay.messages[last-1].Role != role || id != "" && stream.messageID != "" && id != stream.messageID
+	if newMessage && role == "thought" && strings.TrimSpace(text) == "" {
+		return
+	}
+	if stream.full || stream.bytes == maxBytes || newMessage && stream.rows == maxMessages {
+		stream.full, replay.partial = true, true
+		return
+	}
+	room := maxBytes - stream.bytes
+	separator := ""
+	if role == "thought" && replay.codexThoughtParts && !newMessage && strings.TrimSpace(text) != "" {
+		separator = "\n\n"
+		room -= len(separator)
+	}
+	if room <= 0 {
+		stream.full, replay.partial = true, true
+		return
+	}
+	if len(text) > room {
 		for room > 0 && !utf8.RuneStart(text[room]) {
 			room--
 		}
-		text, replay.partial = text[:room], true
+		text, stream.full, replay.partial = text[:room], true, true
+		if text == "" {
+			return
+		}
 	}
-	replay.bytes += len(text)
-	replay.current.WriteString(text)
-	replay.messages[len(replay.messages)-1].Text = replay.current.String()
+	if role != "thought" {
+		replay.thought.last = 0
+	}
+	if newMessage {
+		stream.current.Reset()
+		stream.messageID = ""
+		replay.messages = append(replay.messages, ReplayMessage{Role: role})
+		stream.last = len(replay.messages)
+		stream.rows++
+	}
+	if id != "" {
+		stream.messageID = id
+	}
+	stream.bytes += len(separator) + len(text)
+	message := &replay.messages[stream.last-1]
+	if newMessage {
+		message.FirstChunkBytes = len(text)
+	}
+	stream.current.WriteString(separator)
+	stream.current.WriteString(text)
+	message.Text = stream.current.String()
 }
 
 type SessionModelState struct {
@@ -135,6 +197,56 @@ type ModeState struct {
 
 type UsageState struct {
 	Used, Size int
+}
+
+// PromptUsage is the input split of the most recent request.
+type PromptUsage struct {
+	Input, CachedInput int
+}
+
+// promptUsage is the most recent request's token split. Adapters that report a
+// context window separately can use it to derive occupancy without counting
+// generated output as context.
+type promptUsage struct {
+	Input, CachedInput int
+}
+
+func capturePromptUsage(sessionID string, result PromptResult) PromptResult {
+	result.tokens = promptUsage{}
+	if usage := result.Usage; usage != nil {
+		result.tokens.Input, result.tokens.CachedInput = usage.InputTokens, intValue(usage.CachedReadTokens)+intValue(usage.CachedWriteTokens)
+		return result
+	}
+	meta, ok := result.Meta["quota"].(map[string]any)
+	if !ok {
+		return result
+	}
+	raw, ok := meta["token_count"].(map[string]any)
+	if !ok {
+		return result
+	}
+	result.tokens.Input = jsonInt(raw["inputTokens"])
+	result.tokens.CachedInput = jsonInt(raw["cachedInputTokens"]) + jsonInt(raw["cacheWriteInputTokens"])
+	return result
+}
+
+func intValue(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func jsonInt(value any) int {
+	switch value := value.(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	}
+	return 0
 }
 
 // Handler bridges to editor state. Calls arrive on background goroutines.

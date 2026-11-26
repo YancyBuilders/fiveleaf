@@ -243,7 +243,8 @@ type Session struct {
 	// Title is what it was named, by the user or the agent, "" for none.
 	Title string
 	// Prompt is the first thing asked in it, on one line, "" for none.
-	Prompt string
+	Prompt     string
+	Originator string
 	// Dir is the folder it ran in, "" when it does not say.
 	Dir     string
 	Updated time.Time

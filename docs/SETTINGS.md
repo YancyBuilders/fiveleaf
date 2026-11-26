@@ -323,7 +323,9 @@ a message. Commands run without a shell; put flags in `args` and use an absolute
   paths still use the project.
 - `capabilities` defaults to `[]`. Routing tags such as `"code"`, `"reasoning"` and `"search"` grant no permissions.
 - `disabled` defaults to `false`. Set it to `true` to pause this agent and disconnect its active work.
-- `timeoutSeconds` defaults to `120` and accepts 1–3600 seconds; `0` uses the default.
+- `timeoutSeconds` accepts 1–3600 seconds. Use `0` for the default. Direct ACP chats wait for replies by
+  default. A configured timeout cancels a reply after that many seconds without progress, with the timer
+  paused during approvals. Connection setup has a separate deadline. CLI jobs and roundtable turns default to 120 seconds.
 - `promptArgument` defaults to `false`. For CLI, `true` appends the prompt as one final argument instead of stdin.
 
 ```json
@@ -558,8 +560,8 @@ ff settings --folder set vim=true   # the current folder's own file
 ### Folder settings
 
 When `.fiveleaf/settings.json` is absent, an existing `.mayoi/settings.json` is used in place.
-The legacy `markdownPreview` toggle still sets the Markdown view when `markdownMode` is absent.
-`ff settings --folder unset markdownMode` clears both keys.
+The legacy Markdown preview toggle still sets the view when the mode is absent,
+and `ff settings --folder unset markdownMode` clears both keys.
 
 A folder can choose some preferences for itself in `.fiveleaf/settings.json`, which overrides yours in that folder's
 window. **File → Open Folder Settings (JSON)** opens the file, and creates it if there is none. In the settings

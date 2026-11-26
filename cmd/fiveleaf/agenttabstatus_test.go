@@ -62,6 +62,10 @@ func TestAgentTabTaskLifecycle(t *testing.T) {
 			chat.draft = "Stop this turn"
 			app.sendChat(chat)
 			app.stopChat(chat)
+			if chat.draft != "Stop this turn" {
+				t.Fatalf("Stop did not immediately restore the unsent draft: %q", chat.draft)
+			}
+			hs.untilLong("stopped task settled", func() bool { return !chat.requestInFlight() })
 			hs.settle()
 			if chat.taskState() != agentTaskIdle || chat.draft != "Stop this turn" {
 				t.Fatalf("stopped task: state=%v draft=%q", chat.taskState(), chat.draft)
@@ -84,6 +88,13 @@ func TestAgentTabTaskACPStopReason(t *testing.T) {
 			if chat.sessionID == "" || chat.err != "" || chat.taskState() != want {
 				t.Fatalf("stop reason %s: state=%v err=%q", reason, chat.taskState(), chat.err)
 			}
+			message := map[string]string{
+				"cancelled": locales.AgentStatusCancelled(), "refusal": locales.AgentReplyDeclined(),
+				"max_tokens": locales.AgentReplyTokenLimit(), "max_turn_requests": locales.AgentReplyRequestLimit(),
+			}[reason]
+			if failure := chat.messages[0].failure; failure == nil || failure.reason != message {
+				t.Fatalf("stop reason %s: failure=%+v, want %q", reason, failure, message)
+			}
 		})
 	}
 }
@@ -99,12 +110,15 @@ func TestAgentTabTaskReplyAndDisconnect(t *testing.T) {
 			const question = "Last question"
 			chat.draft = question
 			app.sendAgent()
-			want, draft := agentTaskFailed, question
+			want := agentTaskFailed
 			if scenario == "quiet-reply" {
-				want, draft = agentTaskCompleted, ""
+				want = agentTaskCompleted
 				deadline := time.Now().Add(5 * time.Second)
 				for {
-					if len(chat.messages) == 0 {
+					if !chat.busy {
+						break
+					}
+					if !chat.promptWritten {
 						chat.events.drain()
 					} else {
 						chat.events.mu.Lock()
@@ -123,8 +137,18 @@ func TestAgentTabTaskReplyAndDisconnect(t *testing.T) {
 				app.disconnectExitedChat(chat, client)
 			}
 			hs.untilLong("disconnected after prompt", func() bool { return chat.client == nil && !chat.busy })
-			if chat.taskState() != want || chat.draft != draft || chat.err == "" {
+			if chat.taskState() != want || chat.draft != "" || chat.err == "" {
 				t.Fatalf("after disconnect: state=%v draft=%q err=%q", chat.taskState(), chat.draft, chat.err)
+			}
+			if want == agentTaskFailed && !slices.ContainsFunc(chat.messages, func(msg *agentMessage) bool {
+				return msg.role == "user" && msg.text == question && msg.failure != nil && msg.failure.draft.text == question
+			}) {
+				t.Fatal("the failed prompt is missing from the transcript")
+			}
+			if scenario == "quiet-reply" && !slices.ContainsFunc(chat.messages, func(msg *agentMessage) bool {
+				return msg.role == "system" && msg.text == locales.AgentEmptyReply()
+			}) {
+				t.Fatal("the empty completed reply is missing its transcript notice")
 			}
 		})
 	}
@@ -267,16 +291,19 @@ func TestAgentTaskNoticeFromBackgroundProject(t *testing.T) {
 	owner := projects[0].a
 	chat := owner.agent
 	chat.connectionAttempted = true
+	server := settings.AgentServer{Command: "fixture-acp"}
+	owner.settings.AgentServers = map[string]settings.AgentServer{"test": server}
+	chat.provider, chat.connected = "test", &agentProvider{id: "test", config: server}
 	const title = "Review background project"
 	chat.messages = []*agentMessage{{role: "user", text: title}}
 	owner.openChatPage(chat)
 	handler := owner.chatHandler(chat)
 	frame.active = projects[1]
 	step(tester)
-	handler.post(func() { setTabTaskFixture(chat, agentTaskCompleted) })
+	handler.post(func() { setTabTaskFixture(chat, agentTaskApproval) })
 	step(tester)
-	if !tester.HasText(title) || !tester.HasText(locales.AgentStatusCompleted()) || frame.active != projects[1] {
-		t.Fatal("the background task notification did not appear in the current project")
+	if !tester.HasText(title) || !tester.HasText(locales.AgentTaskApproval()) || frame.active != projects[1] {
+		t.Fatal("the background approval notification did not appear in the current project")
 	}
 	if err := tester.Click(locales.AgentViewChat()); err != nil {
 		t.Fatal(err)

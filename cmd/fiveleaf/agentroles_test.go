@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"fiveleaf/internal/settings"
 )
@@ -199,6 +200,14 @@ func TestAgentRoleRuntimeProcess(t *testing.T) {
 				}
 			}
 			respond(request.ID, result)
+			if scenario == "usage-after-new" {
+				go func() {
+					time.Sleep(20 * time.Millisecond)
+					encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+						"sessionId": id, "update": map[string]any{"sessionUpdate": "usage_update", "used": 0, "size": 128000},
+					}})
+				}()
+			}
 		case "session/set_config_option":
 			if thinking && request.Params.ConfigID == "thought_level" {
 				if !slices.Contains(thinkingLevels(selected[request.Params.SessionID]), request.Params.Value) {
@@ -239,6 +248,16 @@ func TestAgentRoleRuntimeProcess(t *testing.T) {
 				continue
 			}
 			selected[request.Params.SessionID] = request.Params.Value
+			if scenario == "pi-usage-model" {
+				model := request.Params.Value
+				size := 960000
+				if model == "model-b" {
+					size = 1000000
+				}
+				encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": request.Params.SessionID, "update": map[string]any{"sessionUpdate": "usage_update", "used": 12000, "size": size},
+				}})
+			}
 			if thinking {
 				selectedModes[request.Params.SessionID] = "medium"
 				if request.Params.Value == "model-b" {
@@ -266,6 +285,14 @@ func TestAgentRoleRuntimeProcess(t *testing.T) {
 			logEvent(roleRuntimeEvent{Kind: "mode", Session: request.Params.SessionID, Model: "default", Mode: request.Params.ModeID})
 			respond(request.ID, map[string]any{})
 		case "session/prompt":
+			if scenario == "usage-after-reply" || scenario == "pi-usage-after-reply" {
+				encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": request.Params.SessionID, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "reporting context"}},
+				}})
+				encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": request.Params.SessionID, "update": map[string]any{"sessionUpdate": "usage_update", "used": 17234, "size": 128000},
+				}})
+			}
 			if scenario == "roundtable-tool-preamble" {
 				for _, update := range []map[string]any{
 					{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "Looking up the fallback"}},
@@ -343,6 +370,11 @@ func agentRoleHarness(t *testing.T, scenario string) (*harness, string) {
 		Name: "Backend", Protocol: protocol, Command: executable, Args: []string{"-test.run=^TestAgentRoleRuntimeProcess$"}, TimeoutSeconds: 30,
 		Env: map[string]string{"FIVELEAF_ROLE_RUNTIME": scenario, "FIVELEAF_ROLE_LOG": logPath},
 	}}
+	if strings.HasPrefix(scenario, "pi-") {
+		server := hs.a.settings.AgentServers["backend"]
+		server.Args = append(server.Args, "/pi-acp")
+		hs.a.settings.AgentServers["backend"] = server
+	}
 	hs.a.settings.AgentRoles = map[string]settings.AgentRole{"审阅 角色": {Agent: "backend", Model: "model-a", Prompt: "Check the code carefully."}}
 	hs.a.selectAgentRole("审阅 角色")
 	t.Cleanup(hs.a.closeAllAgents)

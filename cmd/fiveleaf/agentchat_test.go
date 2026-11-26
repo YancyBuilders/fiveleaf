@@ -544,21 +544,6 @@ func TestACPDisconnectRestoresPendingDraftAndDropsStaleUpdates(t *testing.T) {
 	}
 }
 
-func TestACPStopTimerBelongsToOneTurn(t *testing.T) {
-	hs := newHarness(t, true)
-	a := hs.a
-	a.agent.busy, a.agent.stopping, a.agent.turn = true, true, 2
-	gen := a.agent.generation
-	a.expireAgentStop(gen, 1)
-	if !a.agent.busy || !a.agent.stopping || a.agent.generation != gen {
-		t.Fatal("old stop timer disconnected a later turn")
-	}
-	a.expireAgentStop(gen, 2)
-	if a.agent.busy || a.agent.stopping || a.agent.err == "" {
-		t.Fatal("active unresponsive turn was not disconnected")
-	}
-}
-
 func TestACPToolIDsAreScopedToConnectionAndSession(t *testing.T) {
 	hs := newHarness(t, true)
 	a := hs.a

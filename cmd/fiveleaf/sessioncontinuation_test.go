@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"fiveleaf/internal/agents"
 	"fiveleaf/internal/settings"
 	"fiveleaf/locales"
+	"github.com/egoist/mygo/ui"
 )
 
 const sessionContinuationTranscript = `{"role":"user","content":"original task: fix the login flow"}
@@ -69,6 +71,89 @@ func TestResumeOriginalACPSession(t *testing.T) {
 	}
 }
 
+func TestResumeRetainedCodexChat(t *testing.T) {
+	for _, scenario := range []string{"closed", "default-profile", "hidden", "exited", "wrong-profile", "wrong-config"} {
+		t.Run(scenario, func(t *testing.T) {
+			hs, logPath, gatePath := lifecycleHarness(t, "codex-reconnect-resume")
+			application, retained := hs.a, hs.a.agent
+			server := application.settings.AgentServers["lifecycle"]
+			server.Name = "Codex"
+			if scenario == "default-profile" {
+				t.Setenv("CODEX_HOME", "")
+			} else {
+				server.Env["CODEX_HOME"] = t.TempDir()
+			}
+			application.settings.AgentServers["lifecycle"] = server
+			application.openFile(hs.path("main.go"), true)
+			application.openAgentPage()
+			hs.untilLong("original ACP session", func() bool { return retained.sessionID != "" })
+			originalClient := retained.client
+			source := continuationSource(t, hs.root)
+			source.ID, source.Root = retained.sessionID, server.Env["CODEX_HOME"]
+			if scenario == "exited" {
+				retained.draft = "drop adapter"
+				application.sendChat(retained)
+				hs.untilLong("agent received the prompt", func() bool {
+					return lifecycleHas(lifecycleEvents(t, logPath), "prompt", source.ID)
+				})
+				releaseLifecycleGate(t, gatePath)
+				hs.untilLong("adapter exit", func() bool { return retained.client == nil && retained.codexRecovery != nil })
+			} else {
+				lifecycleSend(t, hs, "ordinary user message")
+			}
+			retained.draft = "unsent editor draft"
+			queued := &agentQueuedDraft{draft: chatSourceDraft{text: "queued user text"}, sessionID: source.ID}
+			retained.queued = queued
+			messages, requests := len(retained.messages), len(lifecycleEvents(t, logPath))
+			switch scenario {
+			case "closed", "default-profile", "exited":
+				application.closeActive()
+				if application.chatShown(retained) {
+					t.Fatal("closing the chat left its tab visible")
+				}
+			case "hidden":
+				application.settings.AgentServers["other"] = roundtableTestServer(t, "Other", "cli")
+				application.selectChatAgent(retained, "other")
+				if application.chatShown(retained) {
+					t.Fatal("changing provider left the Codex chat visible")
+				}
+			case "wrong-profile":
+				source.Root = t.TempDir()
+			case "wrong-config":
+				server = cloneAgentServer(server)
+				server.TimeoutSeconds++
+				application.settings.AgentServers["lifecycle"] = server
+			}
+			application.resumeSession(source)
+			if strings.HasPrefix(scenario, "wrong-") {
+				if application.agent == retained || application.agent.continuation == nil {
+					t.Fatal("Resume reused a direct chat with different identity")
+				}
+				return
+			}
+			application.resumeSession(source)
+			if application.agent != retained || !application.chatShown(retained) || retained.continuation != nil {
+				t.Fatal("Resume opened a second chat instead of the retained direct conversation")
+			}
+			if slices.ContainsFunc(application.closed, func(tab closedTab) bool { return tab.chat == retained }) {
+				t.Fatal("the reopened conversation still appeared in closed tabs")
+			}
+			if scenario == "exited" {
+				hs.untilLong("explicit native reattach", func() bool { return retained.client != nil && !retained.connecting })
+				got := lifecycleEvents(t, logPath)
+				if len(got) != requests+1 || got[requests].Kind != "resume" || got[requests].Session != source.ID {
+					t.Fatalf("Resume should attach once without sending prompts: %+v", got)
+				}
+			} else if retained.client != originalClient || len(lifecycleEvents(t, logPath)) != requests {
+				t.Fatal("Resume replaced a healthy connection")
+			}
+			if retained.draft != "unsent editor draft" || retained.queued != queued || len(retained.messages) != messages {
+				t.Fatal("Resume changed the conversation, its draft, or its queued message")
+			}
+		})
+	}
+}
+
 func TestResumeSessionWithoutLocalTranscript(t *testing.T) {
 	for _, capability := range []string{"load", "resume", ""} {
 		t.Run("adapter-"+capability, func(t *testing.T) {
@@ -94,6 +179,55 @@ func TestResumeSessionWithoutLocalTranscript(t *testing.T) {
 				t.Fatal("the chat did not show the history replayed by the adapter")
 			}
 			hs.a.closeAllAgents()
+		})
+	}
+}
+
+func TestResumeCodexCopiesOriginalUserText(t *testing.T) {
+	for _, scenario := range []struct {
+		name       string
+		transcript string
+		want       string
+	}{
+		{
+			name: "local history",
+			transcript: `{"type":"session_meta","payload":{"originator":"fiveleaf","id":"source-id"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"[user]\nReview the logs\n\n"}]}}`,
+			want: "Review the logs",
+		},
+		{
+			name: "adapter replay",
+			want: "[user]\nKeep the literal role marker",
+		},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			hs := newHarness(t, true)
+			a := hs.a
+			server := roundtableTestServer(t, "Codex", "acp")
+			server.Env["FIVELEAF_TEST_RESTORE"] = "load"
+			a.settings.AgentServers = map[string]settings.AgentServer{"codex": server}
+			source := continuationSource(t, hs.root)
+			source.Originator = "fiveleaf"
+			if scenario.transcript != "" {
+				if err := os.WriteFile(source.Transcript, []byte(scenario.transcript), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				source.Transcript = ""
+				server.Env["FIVELEAF_TEST_CODEX_REPLAY"] = "1"
+			}
+			a.resumeSession(source)
+			chat := a.agent
+			hs.untilLong("restored conversation", func() bool { return chat.sessionID == source.ID })
+			if len(chat.messages) == 0 || scenario.transcript == "" && (len(chat.messages) != 2 || chat.messages[1].text != "later message") {
+				t.Fatalf("history did not preserve message boundaries: %+v", chat.messages)
+			}
+			tester := ui.NewTester(func(c *ui.Context) {
+				a.agentMessageView(c, chat, chat.messages[0], false)
+			}, 600, 300)
+			if err := tester.Click(locales.AgentCopyMessage()); err != nil || tester.Clipboard() != scenario.want {
+				t.Fatalf("copied %q, want %q (%v)", tester.Clipboard(), scenario.want, err)
+			}
 		})
 	}
 }
@@ -191,16 +325,16 @@ func TestSessionContinuationMissingTranscriptCanRetry(t *testing.T) {
 func TestSessionContinuationContextKeepsHistoryOnce(t *testing.T) {
 	history := agents.Handoff{Messages: []agents.HandoffMessage{
 		{Role: "user", Text: "original-task-marker"},
-		{Role: "assistant", Text: "original-progress-marker"},
+		{Role: "assistant", Text: "original-progress-marker", Phase: "commentary"},
+		{Role: "assistant", Text: "original-answer-marker", Phase: "final_answer"},
 	}}
 	source := agents.Session{Harness: agents.Codex, ID: "source", Title: "Task", Dir: "/work"}
 	for _, limit := range []int{1, 100} {
 		t.Run(strconv.Itoa(limit), func(t *testing.T) {
-			chat := &agentChat{contextMessages: limit, continuation: &sessionContinuation{
-				source: source, loaded: true, context: sessionContinuationContext(source, history),
-			}}
-			for _, message := range history.Messages {
-				chat.messages = append(chat.messages, &agentMessage{role: message.Role, text: message.Text, historical: true})
+			chat := &agentChat{contextMessages: limit, continuation: &sessionContinuation{source: source}}
+			chat.importContinuation(history)
+			if chat.messages[1].role != "commentary" || chat.messages[2].role != "assistant" {
+				t.Fatal("public progress and final answer were mixed in restored history")
 			}
 			for index := 0; index < 110; index++ {
 				chat.messages = append(chat.messages, &agentMessage{role: "user", text: "earlier follow-up"})
@@ -212,13 +346,16 @@ func TestSessionContinuationContextKeepsHistoryOnce(t *testing.T) {
 				combined.WriteString(message.Text)
 				combined.WriteByte('\n')
 			}
-			for _, marker := range []string{"original-task-marker", "original-progress-marker", "newest-request-marker"} {
+			for _, marker := range []string{"original-task-marker", "original-progress-marker", "original-answer-marker", "newest-request-marker"} {
 				if strings.Count(combined.String(), marker) != 1 {
 					t.Fatalf("context at limit %d lost or duplicated %q", limit, marker)
 				}
 			}
 			if len(context) > 100 || context[0].Role != "user" || context[len(context)-1].Text != "newest-request-marker" {
 				t.Fatalf("context at limit %d has the wrong order, role or message budget", limit)
+			}
+			if !strings.Contains(context[0].Text, "--- historical assistant ---\noriginal-progress-marker") {
+				t.Fatal("restored public progress did not retain the assistant role in handoff context")
 			}
 			if limit == 1 && strings.Contains(combined.String(), "earlier follow-up") {
 				t.Fatal("the context-message limit no longer applies to live follow-ups")

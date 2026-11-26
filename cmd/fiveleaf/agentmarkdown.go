@@ -16,9 +16,24 @@ type agentMarkdownState struct {
 	code    *mdeditor.Theme
 }
 
-func sharedAgentMarkdown(c *ui.Context, key any, node *viewNode, p *palette, s *settings.Settings, streaming ...bool) {
+func sharedAgentMarkdown(c *ui.Context, key any, node *viewNode, p *palette, s *settings.Settings, streaming bool, configure ...func(*markdown.Options)) {
 	node.parsed = true
-	agentMarkdown(c, key, node.Text, p, s, len(streaming) > 0 && streaming[0])
+	agentMarkdown(c, key, node.Text, p, s, streaming, configure...)
+}
+
+func agentThoughtMarkdown(p *palette) func(*markdown.Options) {
+	return func(options *markdown.Options) {
+		if options.Theme == nil {
+			return
+		}
+		theme := *options.Theme
+		theme.FontSize = max(11, theme.FontSize-1)
+		theme.Text, theme.Strong = p.muted, p.muted
+		for index := range theme.Headings {
+			theme.Headings[index].Color = p.muted
+		}
+		options.Theme = &theme
+	}
 }
 
 // Keep the parser and highlighted code with the message's UI identity. A

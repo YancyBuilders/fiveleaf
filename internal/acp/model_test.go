@@ -270,6 +270,37 @@ func TestACPUsageIgnoresInvalidReports(t *testing.T) {
 	}
 }
 
+func TestACPUsageAfterNewSessionResponseReachesClient(t *testing.T) {
+	c, ctx := startModelClient(t, "usage-early")
+	if _, err := c.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	session, err := c.NewSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage, ok := c.UsageState(string(session.SessionId)); !ok || usage != (UsageState{Used: 10, Size: 100}) {
+		t.Fatalf("usage sent before NewSession returned = %+v, %v", usage, ok)
+	}
+}
+
+func TestACPPromptUsageUsesInputSplit(t *testing.T) {
+	c, ctx := startModelClient(t, "usage-early")
+	if _, err := c.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	session, err := c.NewSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Prompt(ctx, string(session.SessionId), []ContentBlock{TextBlock("usage")}); err != nil {
+		t.Fatal(err)
+	}
+	if tokens, ok := c.PromptUsage(string(session.SessionId)); !ok || tokens != (PromptUsage{Input: 20343, CachedInput: 4224}) {
+		t.Fatalf("prompt input split = %+v, %v", tokens, ok)
+	}
+}
+
 // The subprocess checks the protocol independently of the SDK encoders.
 func TestACPModelProcess(t *testing.T) {
 	scenario := os.Getenv("FIVELEAF_ACP_MODEL_TEST")
@@ -409,13 +440,19 @@ func TestACPModelProcess(t *testing.T) {
 			}
 			respond(req.ID, map[string]any{"configOptions": options(current, scenario == "cache-response" || current == "next")})
 		case "session/prompt":
-			if selected[req.Params.SessionID] != "target" {
+			if scenario != "usage-early" && selected[req.Params.SessionID] != "target" {
 				os.Exit(4)
 			}
 			if scenario == "cache-update" {
 				update(req.Params.SessionID, options("target", true))
 			}
-			respond(req.ID, map[string]string{"stopReason": "end_turn"})
+			result := map[string]any{"stopReason": "end_turn"}
+			if scenario == "usage-early" {
+				result["_meta"] = map[string]any{"quota": map[string]any{"token_count": map[string]any{
+					"inputTokens": 20343, "cachedInputTokens": 4224, "outputTokens": 7,
+				}}}
+			}
+			respond(req.ID, result)
 		}
 	}
 	os.Exit(0)

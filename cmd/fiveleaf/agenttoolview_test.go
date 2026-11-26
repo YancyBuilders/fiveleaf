@@ -28,9 +28,9 @@ func TestAgentToolDisclosureDefaults(t *testing.T) {
 		{"read", "completed", false},
 		{"search", "in_progress", false},
 		{"", "completed", false},
-		{"execute", "in_progress", true},
-		{"terminal", "completed", true},
-		{"edit", "completed", true},
+		{"execute", "in_progress", false},
+		{"terminal", "completed", false},
+		{"edit", "completed", false},
 		{"read", "failed", true},
 	} {
 		t.Run(tc.kind+"-"+tc.status, func(t *testing.T) {
@@ -47,6 +47,36 @@ func TestAgentToolDisclosureDefaults(t *testing.T) {
 				t.Fatal("the disclosure did not store and display the user's choice")
 			}
 		})
+	}
+}
+
+func TestAgentToolRunningExpandsOnlyWhileLive(t *testing.T) {
+	hs := newHarness(t, true)
+	agentViewFixture(hs)
+	chat := hs.a.agent
+	chat.busy = true
+	tool := &agentTool{title: "Run fixture", kind: "execute", status: "in_progress", text: "streaming output"}
+	chat.tools = []*agentTool{tool}
+	chat.messages = []*agentMessage{{role: "user", text: "Run it"}, {role: "tool", tool: tool}}
+	hs.settle()
+	if !hs.tt.HasText(tool.text) || tool.expansionSet {
+		t.Fatal("the live command should open without becoming a manual choice")
+	}
+	tool.status = "completed"
+	hs.settle()
+	if hs.tt.HasText(tool.text) || tool.expansionSet {
+		t.Fatal("a completed command should fold unless the user opened it")
+	}
+	thought := &agentMessage{role: "thought", text: "Checking the result.\n\nIt looks consistent."}
+	chat.messages = append(chat.messages, thought)
+	hs.settle()
+	if !hs.tt.HasText("It looks consistent.") {
+		t.Fatal("active reasoning should open while it streams")
+	}
+	chat.messages = append(chat.messages, &agentMessage{role: "assistant", text: "The result is correct."})
+	hs.settle()
+	if hs.tt.HasText("It looks consistent.") || !hs.tt.HasText("The result is correct.") {
+		t.Fatal("reasoning should fold once the final response starts")
 	}
 }
 
@@ -113,12 +143,22 @@ func TestAgentToolReviewRemainsVisibleWhenCollapsed(t *testing.T) {
 	hs := agentToolViewHarness(t, tool)
 	tool.changes = []agentChange{{path: hs.path("main.go"), oldText: "before\n", newText: "after\n", existed: true}}
 	hs.settle()
+	if hs.tt.HasText(tool.text) {
+		t.Fatal("a completed edit should start folded")
+	}
+	if err := hs.tt.Click(tool.title); err != nil {
+		t.Fatal(err)
+	}
+	hs.settle()
+	if !hs.tt.HasText(tool.text) {
+		t.Fatal("opening the edit did not show its output")
+	}
 	if err := hs.tt.Click(tool.title); err != nil {
 		t.Fatal(err)
 	}
 	hs.settle()
 	if hs.tt.HasText(tool.text) {
-		t.Fatal("the edit output did not collapse")
+		t.Fatal("the opened edit did not fold again")
 	}
 	if err := hs.tt.Click(locales.AgentReviewChange() + ": main.go"); err != nil {
 		t.Fatal(err)
@@ -133,6 +173,10 @@ func TestAgentToolReviewRemainsVisibleWhenCollapsed(t *testing.T) {
 func TestAgentToolOutputScrollsWithinNarrowViews(t *testing.T) {
 	tool := &agentTool{title: "Execute a command with a long title", kind: "execute", status: "completed", text: strings.Repeat("long-line-", 300) + "\nlast line"}
 	hs := agentToolViewHarness(t, tool)
+	if err := hs.tt.Click(tool.title); err != nil {
+		t.Fatal(err)
+	}
+	hs.settle()
 	outputLabel := locales.AgentTools() + ": " + tool.title
 	for _, width := range []float32{340, 200, 160} {
 		sizeChatWorkspace(hs, width)
@@ -176,6 +220,10 @@ func TestAgentToolOutputScrollsWithinNarrowViews(t *testing.T) {
 func TestAgentToolInputShowsUsefulSummaryOnly(t *testing.T) {
 	tool := &agentTool{title: "Run tests", kind: "execute", status: "completed", text: "PASS", rawInput: json.RawMessage(`{"command":"go test ./cmd/fiveleaf -run TestAgentTool","internalPayload":"unused-private-value"}`)}
 	hs := agentToolViewHarness(t, tool)
+	if err := hs.tt.Click(tool.title); err != nil {
+		t.Fatal(err)
+	}
+	hs.settle()
 	if !hs.tt.HasText("go test ./cmd/fiveleaf -run TestAgentTool") || hs.tt.HasText("internalPayload") || hs.tt.HasText("unused-private-value") {
 		t.Fatal("the tool input summary omitted its command or exposed irrelevant JSON")
 	}
@@ -183,5 +231,59 @@ func TestAgentToolInputShowsUsefulSummaryOnly(t *testing.T) {
 	hs.settle()
 	if !hs.tt.HasText("main.go") || hs.tt.HasText("entire replacement file") {
 		t.Fatal("the file input summary omitted its path or rendered the full replacement")
+	}
+}
+
+func TestAgentToolExpandedDetailsFollowAdapterUpdates(t *testing.T) {
+	tool := &agentTool{title: "Look up a service", kind: "search", status: "pending"}
+	hs := agentToolViewHarness(t, tool)
+	if hs.tt.HasText(locales.AgentToolWaitingDetails()) {
+		t.Fatal("a collapsed call showed its waiting hint")
+	}
+	if err := hs.tt.Click(tool.title); err != nil {
+		t.Fatal(err)
+	}
+	hs.settle()
+	if !hs.tt.HasText(locales.AgentToolWaitingDetails()) {
+		t.Fatal("an open pending call had no visible details state")
+	}
+	tool.status = "completed"
+	hs.settle()
+	if !hs.tt.HasText(locales.AgentToolNoDetails()) || hs.tt.HasText(locales.AgentToolWaitingDetails()) {
+		t.Fatal("a completed call without details still looked pending")
+	}
+	line := 21
+	tool.locations = []agentLocation{{Path: hs.path("main.go"), Line: &line}}
+	tool.rawInput = json.RawMessage(`{"server":"logs","tool":"search","arguments":{"query":"routing lookup","accessToken":"internal input"}}`)
+	tool.progressOutput.WriteString("Matching calls…")
+	tool.rawOutput = formatAgentToolOutput(json.RawMessage(`{"result":{"content":[{"type":"text","text":"Matching calls found"},{"type":"image","mimeType":"image/png","data":"private binary payload","uri":"data:image/png;base64,more-binary"}],"structuredContent":{"matches":3}},"error":null}`))
+	hs.settle()
+	for _, visible := range []string{locales.AgentToolInput(), locales.AgentToolOutput(), "routing lookup", "main.go:21", "Matching calls found", "matches: 3"} {
+		if !hs.tt.HasText(visible) {
+			t.Fatalf("missing detail %q", visible)
+		}
+	}
+	for _, hidden := range []string{"internal input", "private binary payload", "more-binary", "Matching calls…", locales.AgentToolNoDetails()} {
+		if hs.tt.HasText(hidden) {
+			t.Fatalf("unexpected competing detail %q", hidden)
+		}
+	}
+	hs.shot("agent-tool-expanded-details")
+	label := locales.AgentCopyToolOutput() + ": " + tool.title
+	if err := hs.tt.Click(label); err != nil {
+		t.Fatal(err)
+	}
+	if hs.tt.Clipboard() != tool.rawOutput {
+		t.Fatalf("copied output = %q, want %q", hs.tt.Clipboard(), tool.rawOutput)
+	}
+	tool.terminalOutput.WriteString("Live terminal stream\n")
+	hs.settle()
+	if !hs.tt.HasText("Live terminal stream") || hs.tt.HasText("Matching calls found") {
+		t.Fatal("terminal output did not replace the raw fallback")
+	}
+	tool.text = "Final standard content\n"
+	hs.settle()
+	if !hs.tt.HasText("Final standard content") || hs.tt.HasText("Live terminal stream") {
+		t.Fatal("standard content did not take precedence over the fallback stream")
 	}
 }

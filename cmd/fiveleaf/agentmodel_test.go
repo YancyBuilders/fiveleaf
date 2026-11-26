@@ -153,6 +153,9 @@ func TestAgentModelPickerRecoversAfterAuthentication(t *testing.T) {
 	if chat.err == "" || chat.client == nil || chat.sessionID != "" {
 		t.Fatal("the fixture did not require authentication before session creation")
 	}
+	if !chat.authRequired {
+		t.Fatal("an explicit authentication error did not request sign-in")
+	}
 	if err := hs.tt.Click(locales.AgentAuthenticate() + ": Log in"); err != nil {
 		t.Fatal(err)
 	}
@@ -160,6 +163,9 @@ func TestAgentModelPickerRecoversAfterAuthentication(t *testing.T) {
 	hs.untilLong("authenticated model rejection", func() bool { return !chat.connecting })
 	if chat.err == "" || chat.sessionID == "" || chat.draft != "keep authenticated question" || chat.modelOverride != "" {
 		t.Fatalf("model rejection after authentication left no recoverable session: session=%q error=%q draft=%q override=%q", chat.sessionID, chat.err, chat.draft, chat.modelOverride)
+	}
+	if chat.authRequired {
+		t.Fatal("sign-in remained required after authentication")
 	}
 	for _, event := range agentRoleEvents(t, logPath) {
 		if event.Kind == "prompt" {

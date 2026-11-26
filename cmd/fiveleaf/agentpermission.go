@@ -75,14 +75,27 @@ func (request *agentPermission) optionLabel(option acp.PermissionOption) string 
 }
 
 func (a *app) agentPermissionsView(c *ui.Context, chat *agentChat, pal *palette) {
+	a.agentPermissionCards(c, chat, pal, false)
+}
+
+func (a *app) agentPermissionCards(c *ui.Context, chat *agentChat, pal *palette, tight bool) {
 	for _, request := range chat.permissions {
 		if request != nil {
-			a.permissionCard(c, chat, request, pal)
+			a.permissionCard(c, chat, request, pal, tight)
 		}
 	}
 }
 
-func (a *app) permissionCard(c *ui.Context, chat *agentChat, request *agentPermission, pal *palette) {
+func (a *app) agentPermissionDock(c *ui.Context, chat *agentChat, pal *palette, tight bool) {
+	metrics := pal.metricsOr()
+	ui.Scroll(c.Key("approval-dock")).FillWidth().MaxWidth(agentConversationWidth).AlignSelf(ui.Center).
+		MinWidth(0).MinHeight(0).MaxHeightPercent(42).Padding(0, metrics.inset, metrics.gap, metrics.inset).
+		Gap(metrics.gap).Focusable().Label(locales.AgentTaskApproval()).Children(func() {
+		a.agentPermissionCards(c, chat, pal, tight)
+	})
+}
+
+func (a *app) permissionCard(c *ui.Context, chat *agentChat, request *agentPermission, pal *palette, tight bool) {
 	m := pal.metricsOr()
 	open := !request.preview.complete
 	if request.expansionSet {
@@ -104,19 +117,28 @@ func (a *app) permissionCard(c *ui.Context, chat *agentChat, request *agentPermi
 	if compact {
 		card.Padding(m.inset)
 	}
+	if tight {
+		card.Padding(m.pad, m.inset)
+	}
+	heading := cmp.Or(request.preview.question, request.title)
 	contextTitle := request.preview.question != "" && request.title != "" && request.title != request.preview.question
 	card.Children(func() {
 		ui.Row(c.Key("header")).FillWidth().MinWidth(0).AlignItems(ui.Center).Gap(m.pad).Children(func() {
 			ui.Icon(c, iconLock).FontSize(14).TextColor(pal.modifiedFg).Shrink(0)
-			ui.Text(c, locales.AgentTaskApproval()).FontSize(m.textSmall).FontWeight(m.weightBold).
-				TextColor(pal.modifiedFg).SingleLine().MinWidth(0)
-			if contextTitle && !compact {
-				ui.Text(c, "·  "+request.title).FontSize(m.textSmall).TextColor(pal.muted).SingleLine().MinWidth(0).Tooltip(request.title)
+			if tight {
+				ui.Text(c, cmp.Or(heading, locales.AgentTaskApproval())).Grow(1).MinWidth(0).FontSize(m.textBody).
+					FontWeight(m.weightBold).TextColor(pal.text).Selectable()
+			} else {
+				ui.Text(c, locales.AgentTaskApproval()).FontSize(m.textSmall).FontWeight(m.weightBold).
+					TextColor(pal.modifiedFg).SingleLine().MinWidth(0)
+				if contextTitle && !compact {
+					ui.Text(c, "·  "+request.title).FontSize(m.textSmall).TextColor(pal.muted).SingleLine().MinWidth(0).Tooltip(request.title)
+				}
+				ui.Spacer(c).MinWidth(0)
 			}
-			ui.Spacer(c).MinWidth(0)
 			label := locales.ButtonCancel()
 			var cancel ui.Element
-			if compact {
+			if compact || tight {
 				cancel = a.iconButtonBase(c.Key("cancel"), iconX, label, false).Size(26, 26).Tooltip(label)
 			} else {
 				cancel = button.Button(c.Key("cancel"), button.Props{Label: label, Variant: button.Ghost, Size: button.Sm}).
@@ -126,10 +148,10 @@ func (a *app) permissionCard(c *ui.Context, chat *agentChat, request *agentPermi
 				answer("")
 			}
 		})
-		if contextTitle && compact {
+		if contextTitle && (compact || tight) {
 			ui.Text(c, request.title).FillWidth().MinWidth(0).FontSize(m.textSmall).TextColor(pal.muted)
 		}
-		if heading := cmp.Or(request.preview.question, request.title); heading != "" {
+		if !tight && heading != "" {
 			ui.Text(c, heading).FillWidth().MinWidth(0).FontSize(m.textTitle + 4).FontWeight(m.weightBold).
 				LineHeight(1.35).TextColor(pal.text).Selectable()
 		}

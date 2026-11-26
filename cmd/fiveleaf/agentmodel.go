@@ -73,7 +73,7 @@ func (a *app) setChatModelSelection(s *agentChat, id string, applied func()) {
 			s.configuring = false
 			h.workspace().refreshAgentModels(s)
 			if err != nil {
-				s.err = err.Error()
+				s.err = acp.ErrorMessage(err)
 				return
 			}
 			s.modelOverride, s.err = id, ""

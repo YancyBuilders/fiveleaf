@@ -266,7 +266,7 @@ func (a *app) view(c *ui.Context) {
 	}
 	clear(a.notes)
 	a.notes = a.notes[:0]
-	a.showChatTaskNotices(c)
+	a.showChatTaskNotices(c, true)
 	notificationViewport(c, p, a.statusHeight(), a.noticeHistoryOpen)
 	a.pluginTick()
 	a.tick()

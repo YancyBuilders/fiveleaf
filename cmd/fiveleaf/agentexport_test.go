@@ -37,6 +37,7 @@ func TestChatExportCurrentTab(t *testing.T) {
 	chat.messages = []*agentMessage{
 		{role: "user", text: question, historical: true}, {role: "assistant", text: "Earlier answer", historical: true},
 		{role: "user", text: "Follow-up"}, {role: "thought", text: "private thought"},
+		{role: "commentary", text: "Public progress"},
 		{role: "tool", tool: &agentTool{text: "tool output"}}, {role: "system", text: "system notice"},
 		{role: "connection", text: "connection diagnostics"}, answer,
 	}
@@ -57,7 +58,8 @@ func TestChatExportCurrentTab(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "# ../复盘: Login\n\n> " + locales.SessionsContinuePartial() + "\n\n## " + locales.AgentYou() + "\n\n" + question +
-		"\n\n## " + locales.AgentTitle() + "\n\nEarlier answer\n\n## " + locales.AgentYou() + "\n\nFollow-up\n\n## " + locales.AgentTitle() + "\n\n" + reply + "\n"
+		"\n\n## " + locales.AgentTitle() + "\n\nEarlier answer\n\n## " + locales.AgentYou() + "\n\nFollow-up" +
+		"\n\n## " + locales.AgentTitle() + "\n\nPublic progress\n\n## " + locales.AgentTitle() + "\n\n" + reply + "\n"
 	if string(data) != want {
 		t.Errorf("unexpected Markdown\ngot %q\nwant %q", data, want)
 	}

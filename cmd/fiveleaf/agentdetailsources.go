@@ -26,8 +26,9 @@ type chatDraftRef struct {
 }
 
 type chatSourceDraft struct {
-	text string
-	refs []chatDraftRef
+	text   string
+	refs   []chatDraftRef
+	pastes []*chatDraftPaste
 }
 
 type chatSourceState struct {
@@ -79,7 +80,7 @@ func (draft *chatSourceDraft) sync(text string) bool {
 	removed := len(kept) != len(draft.refs)
 	clear(draft.refs[len(kept):])
 	if len(kept) == 0 {
-		*draft = chatSourceDraft{}
+		draft.text, draft.refs = "", nil
 	} else {
 		draft.text, draft.refs = text, kept
 	}
@@ -110,8 +111,18 @@ func (draft *chatSourceDraft) hasFiles() bool {
 	return slices.ContainsFunc(draft.refs, func(ref chatDraftRef) bool { return ref.file != "" })
 }
 
+func (draft *chatSourceDraft) hasAttachments() bool {
+	return len(draft.pastes) > 0 || draft.hasFiles()
+}
+
 func (draft *chatSourceDraft) promptSize(text string) int {
 	size := len(text)
+	for _, paste := range draft.pastes {
+		if size > 0 {
+			size += 2
+		}
+		size += len(paste.text)
+	}
 	for _, ref := range draft.refs {
 		if ref.file != "" {
 			if size > 0 {
@@ -124,27 +135,35 @@ func (draft *chatSourceDraft) promptSize(text string) int {
 }
 
 func (chat *agentChat) draftPrompt() string {
-	draft := &chat.sources.draft
-	size := draft.promptSize(chat.draft)
-	if size == len(chat.draft) {
-		return chat.draft
+	return chat.sources.draft.promptText(chat.draft)
+}
+
+func (draft *chatSourceDraft) promptText(text string) string {
+	if !draft.hasAttachments() {
+		return text
 	}
 	var prompt strings.Builder
-	prompt.Grow(size)
-	prompt.WriteString(chat.draft)
+	prompt.Grow(draft.promptSize(text))
+	prompt.WriteString(text)
+	appendBlock := func(block string) {
+		if prompt.Len() > 0 {
+			prompt.WriteString("\n\n")
+		}
+		prompt.WriteString(block)
+	}
+	for _, paste := range draft.pastes {
+		appendBlock(paste.text)
+	}
 	for _, ref := range draft.refs {
 		if ref.file != "" {
-			if prompt.Len() > 0 {
-				prompt.WriteString("\n\n")
-			}
-			prompt.WriteString(ref.content)
+			appendBlock(ref.content)
 		}
 	}
 	return prompt.String()
 }
 
 func (chat *agentChat) hasDraft() bool {
-	return strings.TrimSpace(chat.draft) != "" || chat.sources.draft.hasFiles()
+	return strings.TrimSpace(chat.draft) != "" || chat.sources.draft.hasAttachments()
 }
 
 func (chat *agentChat) removeDraftFile(name string) {
@@ -152,12 +171,18 @@ func (chat *agentChat) removeDraftFile(name string) {
 	if index := draft.fileIndex(name); index >= 0 {
 		draft.refs = slices.Delete(draft.refs, index, index+1)
 		if len(draft.refs) == 0 {
-			*draft = chatSourceDraft{}
+			draft.text = ""
 		}
 		chat.sources.valid = false
-		if sent, owned := chat.sources.pastedImages[name]; owned && !sent && chat.sources.pending.fileIndex(name) < 0 {
-			chat.sources.removePastedImage(name)
-		}
+		chat.removeUnusedPastedImage(name)
+	}
+}
+
+func (chat *agentChat) removeUnusedPastedImage(name string) {
+	state := &chat.sources
+	if sent, owned := state.pastedImages[name]; owned && !sent && state.draft.fileIndex(name) < 0 && state.pending.fileIndex(name) < 0 &&
+		(chat.queued == nil || chat.queued.draft.fileIndex(name) < 0) {
+		state.removePastedImage(name)
 	}
 }
 
@@ -168,11 +193,18 @@ func (state *chatSourceState) removePastedImage(path string) {
 }
 
 func (chat *agentChat) stageDetailSources() {
+	chat.sources.pending, chat.sources.sent = chat.takeChatDraft(), false
+}
+
+func (chat *agentChat) takeChatDraft() chatSourceDraft {
 	state := &chat.sources
 	state.draft.sync(chat.draft)
 	state.draft.text = chat.draft
-	state.pending, state.draft, state.sent = state.draft, chatSourceDraft{}, false
+	draft := state.draft
+	state.draft = chatSourceDraft{}
+	chat.draft, chat.expandedPaste = "", nil
 	state.valid = false
+	return draft
 }
 
 func (chat *agentChat) recordDetailSources() {
@@ -198,6 +230,7 @@ func (chat *agentChat) restoreDetailSources(prompt, next, combined string) {
 		restored = chatSourceDraft{}
 	}
 	restored.append(combined, len(combined)-len(next), state.draft.refs)
+	restored.pastes = append(slices.Clone(restored.pastes), state.draft.pastes...)
 	state.draft, state.pending, state.sent, state.valid = restored, chatSourceDraft{}, false, false
 }
 
@@ -235,7 +268,7 @@ func chatToolSourcePatch(locations []sdk.ToolCallLocation, contents []sdk.ToolCa
 					}
 				}
 			}
-			if label != "" {
+			if label != "" && !agentToolDataURI(label) {
 				patch.content = append(patch.content, chatDetailSource{label: label})
 			}
 		}

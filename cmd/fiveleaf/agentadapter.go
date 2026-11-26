@@ -11,6 +11,20 @@ import (
 	"fiveleaf/internal/settings"
 )
 
+type codexLaunchProfile struct {
+	home, userProfile, codexHome, executable string
+}
+
+func agentCodexLaunchProfile(config acp.Config) codexLaunchProfile {
+	value := func(name string) string {
+		if configured, ok := config.Env[name]; ok {
+			return configured
+		}
+		return os.Getenv(name)
+	}
+	return codexLaunchProfile{home: value("HOME"), userProfile: value("USERPROFILE"), codexHome: value("CODEX_HOME"), executable: value("CODEX_PATH")}
+}
+
 func agentACPConfig(provider agentProvider) acp.Config {
 	server := provider.config
 	config := acp.Config{Name: provider.name, Command: server.Command, Args: server.Args,

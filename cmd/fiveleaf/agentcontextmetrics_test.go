@@ -220,6 +220,26 @@ func TestAgentContextPiPathsAndUnknownProviders(t *testing.T) {
 	}
 }
 
+func TestPiContextWindowCorrectsOutputLimitReport(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	path := filepath.Join(home, ".pi", "agent", "models.json")
+	writeAgentContextFixture(t, path, `{"providers":{"magpie":{"models":[{"id":"tencent-tclaude/hy4flash","contextWindow":960000,"maxTokens":64000},{"id":"tencent-tclaude/deepseek-v4.1-flash","contextWindow":1000000,"maxTokens":128000}]}}}`)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	}
+	config := settings.AgentServer{Command: "pi-acp", Env: map[string]string{"HOME": home}}
+	if got, ok := piContextWindow(config, root, "tencent-tclaude/hy4flash", 64000); !ok || got != 960000 {
+		t.Fatalf("Pi output limit became the context window: %d, %v", got, ok)
+	}
+	if got, ok := piContextWindow(config, root, "tencent-tclaude/deepseek-v4.1-flash", 128000); !ok || got != 1000000 {
+		t.Fatalf("Pi output limit became the context window: %d, %v", got, ok)
+	}
+	if _, ok := piContextWindow(config, root, "tencent-tclaude/hy4flash", 960000); ok {
+		t.Fatal("a correct Pi context report was replaced")
+	}
+}
+
 func contextCategoryForTest(t *testing.T, snapshot agentContextSnapshot, kind string) agentContextCategory {
 	t.Helper()
 	for _, category := range snapshot.categories {
@@ -241,7 +261,9 @@ func TestAgentContextEstimatesOnlyActiveBoundedPrompt(t *testing.T) {
 	}
 	tool := &agentTool{sessionID: s.sessionID, generation: s.generation, title: "Read", rawInput: json.RawMessage(`{"path":"fixture"}`), text: "result"}
 	s.tools = []*agentTool{tool, {sessionID: "old", generation: 3, text: strings.Repeat("old tool", 1000)}}
-	s.messages = append(s.messages, &agentMessage{role: "thought", text: "visible thought"}, &agentMessage{role: "tool", tool: tool}, &agentMessage{role: "assistant", text: "new answer"})
+	s.messages = append(s.messages, &agentMessage{role: "thought", text: "visible thought"},
+		&agentMessage{role: "commentary", text: "public progress"}, &agentMessage{role: "tool", tool: tool},
+		&agentMessage{role: "assistant", text: "new answer"})
 	snapshot := (&app{}).contextSnapshot(s)
 	if !snapshot.known || !snapshot.estimated || snapshot.used != 1000 {
 		t.Fatalf("actual usage or estimate provenance lost: %+v", snapshot)
@@ -258,6 +280,14 @@ func TestAgentContextEstimatesOnlyActiveBoundedPrompt(t *testing.T) {
 	}
 	if got := contextCategoryForTest(t, snapshot, "tool_output"); !got.known || got.tokens != agentContextTextTokens("result") {
 		t.Fatalf("tool output counted shared pointers or stale sessions: %+v", got)
+	}
+	wantAssistant := agentContextTextTokens(roundtable.FormatPrompt([]roundtable.Message{{Role: "assistant", Text: "kept answer"}})) +
+		agentContextTextTokens("public progress") + agentContextTextTokens("new answer")
+	if got := contextCategoryForTest(t, snapshot, "assistant"); !got.known || got.tokens != wantAssistant {
+		t.Fatalf("assistant estimate missed public progress: %+v, want %d", got, wantAssistant)
+	}
+	if got := contextCategoryForTest(t, snapshot, "thinking"); !got.known || got.tokens != agentContextTextTokens("visible thought") {
+		t.Fatalf("thinking estimate should include the thought alone: %+v", got)
 	}
 	for _, used := range []int{0, 7, 1000} {
 		s.contextUsage.Used = used
@@ -284,6 +314,91 @@ func TestAgentContextEstimatesOnlyActiveBoundedPrompt(t *testing.T) {
 		if got.estimated || contextCategoryForTest(t, got, "unattributed").tokens != copy.contextUsage.Used {
 			t.Fatalf("stale %s accounting reached the new context", stale)
 		}
+	}
+}
+
+func TestAgentContextKeepsPublicProgressWithReply(t *testing.T) {
+	chat := &agentChat{contextMessages: 3, messages: []*agentMessage{
+		{role: "user", text: "First question"},
+		{role: "commentary", text: "Checking the cache."},
+		{role: "tool", tool: &agentTool{text: "Tool output"}},
+		{role: "thought", text: "Private thought"},
+		{role: "commentary", text: "Reproduced the issue."},
+		{role: "assistant", text: "The final answer."},
+		{role: "user", text: "Follow-up"},
+	}}
+	got := chatContext(chat)
+	if len(got) != 3 || got[0].Text != "First question" || got[1].Role != "assistant" ||
+		got[1].Text != "Checking the cache.\n\nReproduced the issue.\n\nThe final answer." || got[2].Text != "Follow-up" {
+		t.Fatalf("context should include public progress with its reply: %+v", got)
+	}
+}
+
+func TestAgentContextSeparatesPublicMessageStreams(t *testing.T) {
+	for _, test := range []struct{ name, firstID, secondID, want string }{
+		{"distinct", "one", "two", "First.\n\nSecond."},
+		{"same", "one", "one", "First.Second."},
+		{"legacy", "", "", "First.Second."},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			chat := &agentChat{messages: []*agentMessage{
+				{role: "assistant", text: "First.", streamID: test.firstID},
+				{role: "thought", text: "Private thought"},
+				{role: "assistant", text: "Second.", streamID: test.secondID},
+			}}
+			if got := chatContext(chat); len(got) != 1 || got[0].Text != test.want {
+				t.Fatalf("context = %+v, want one assistant reply with text %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestAgentContextNativeToolEstimatesUseActiveTurn(t *testing.T) {
+	for _, provider := range []string{"codex-acp", "other-acp"} {
+		t.Run(provider, func(t *testing.T) {
+			chat := &agentChat{
+				sessionID: "native", generation: 3, turn: 2,
+				connected:    &agentProvider{config: settings.AgentServer{Command: provider}},
+				contextUsage: &acp.UsageState{Used: 1000, Size: 100000},
+				contextAccounting: agentContextAccounting{
+					session: "native", generation: 3, input: map[string]int{"user": 10},
+				},
+				tools: []*agentTool{
+					{sessionID: "native", generation: 3, turn: 1, title: "Read", text: strings.Repeat("previous output", 1000)},
+					{sessionID: "native", generation: 3, turn: 2, title: "Read", text: "current output"},
+				},
+			}
+			var compaction *agentTool
+			if provider == "codex-acp" {
+				compaction = &agentTool{sessionID: "native", generation: 3, turn: 2,
+					title: "Compact conversation", kind: "think", status: "in_progress"}
+				chat.tools = append(chat.tools, compaction)
+			} else {
+				chat.continuation = &sessionContinuation{native: true}
+			}
+			snapshot := (&app{}).contextSnapshot(chat)
+			for _, category := range []struct {
+				kind   string
+				tokens int
+			}{
+				{"tool_calls", agentContextTextTokens("Read")},
+				{"tool_output", agentContextTextTokens("current output")},
+				{"unattributed", 1000 - 10 - agentContextTextTokens("Read") - agentContextTextTokens("current output")},
+			} {
+				if got := contextCategoryForTest(t, snapshot, category.kind); !got.known || got.tokens != category.tokens {
+					t.Errorf("%s tokens = %+v, want %d", category.kind, got, category.tokens)
+				}
+			}
+			if compaction != nil {
+				compaction.status = "completed"
+				chat.acceptContextUsage(acp.UsageState{Used: 100, Size: 100000})
+				snapshot = (&app{}).contextSnapshot(chat)
+				unattributed := contextCategoryForTest(t, snapshot, "unattributed")
+				if snapshot.estimated || !unattributed.known || unattributed.tokens != 100 {
+					t.Fatal("pre-compaction estimates were attributed to the compacted context")
+				}
+			}
+		})
 	}
 }
 

@@ -202,14 +202,23 @@ func readTranscriptLine(line []byte, s *Session) {
 	}
 }
 
+type transcriptTextPart struct{ Type, Text string }
+
 // promptOf is what a user's message says, on one line, "" for one of
 // tags, as a command's or the context an agent adds, or of no text.
 func promptOf(content json.RawMessage) string {
+	return (Session{}).firstPromptOf(content)
+}
+
+func (source Session) firstPromptOf(content json.RawMessage) string {
 	var text string
 	if json.Unmarshal(content, &text) != nil {
-		var parts []struct{ Type, Text string }
+		var parts []transcriptTextPart
 		if json.Unmarshal(content, &parts) != nil {
 			return ""
+		}
+		if decoded := source.decodeCodexPromptParts(parts); decoded != "" {
+			return oneLine(decoded)
 		}
 		for _, p := range parts {
 			if (p.Type == "text" || p.Type == "input_text") && promptText(p.Text) != "" {
@@ -217,6 +226,8 @@ func promptOf(content json.RawMessage) string {
 				break
 			}
 		}
+	} else if decoded, ok := source.DecodeCodexFirstPrompt(text, 0); ok {
+		return oneLine(decoded)
 	}
 	return oneLine(promptText(text))
 }
@@ -267,6 +278,64 @@ func codexRollouts(dir string) []string {
 	return out
 }
 
+// CodexContextHeader marks the separate context block in a FiveLeaf prompt.
+const CodexContextHeader = "FiveLeaf conversation context\n\n"
+
+func CodexPromptNeedsSeparateBody(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return handoffCleanText(text) != trimmed || promptText(text) != trimmed ||
+		strings.HasPrefix(text, "[user]\n") && strings.HasSuffix(text, "\n\n")
+}
+
+func (source Session) fiveLeafCodex() bool {
+	return source.Harness == Codex && source.Originator == "fiveleaf"
+}
+
+// DecodeCodexFirstPrompt removes FiveLeaf's context wrapper from the first user prompt.
+// firstBlockBytes is the byte length of the first of two blocks, or zero for a single block.
+func (source Session) DecodeCodexFirstPrompt(text string, firstBlockBytes int) (string, bool) {
+	if !source.fiveLeafCodex() || firstBlockBytes < 0 || firstBlockBytes > len(text) {
+		return text, false
+	}
+	if firstBlockBytes > 0 && firstBlockBytes < len(text) {
+		if strings.HasPrefix(text[:firstBlockBytes], CodexContextHeader) {
+			return text[firstBlockBytes:], true
+		}
+		return text, false
+	}
+	if body, ok := strings.CutPrefix(text, "[user]\n"); ok {
+		if body, ok = strings.CutSuffix(body, "\n\n"); ok && strings.TrimSpace(body) != "" {
+			return body, true
+		}
+	}
+	return text, false
+}
+
+func (source Session) decodedCodexPrompt(text string, firstBlockBytes int) string {
+	if body, ok := source.DecodeCodexFirstPrompt(text, firstBlockBytes); ok {
+		return body
+	}
+	return ""
+}
+
+func (source Session) decodeCodexPromptParts(parts []transcriptTextPart) string {
+	if !source.fiveLeafCodex() || len(parts) == 0 || len(parts) > 2 {
+		return ""
+	}
+	for _, part := range parts {
+		if part.Type != "text" && part.Type != "input_text" {
+			return ""
+		}
+	}
+	if len(parts) == 1 {
+		return source.decodedCodexPrompt(parts[0].Text, 0)
+	}
+	if !strings.HasPrefix(parts[0].Text, CodexContextHeader) || parts[1].Text == "" {
+		return ""
+	}
+	return parts[1].Text
+}
+
 // readCodex reads a transcript of Codex: its first line says the session
 // and where it ran, and its first message of the user what was asked.
 // Sessions of its exec mode are not for resuming.
@@ -298,15 +367,19 @@ func readCodex(path string) (Session, bool) {
 		switch {
 		case v.Type == "session_meta" && !metadataSeen:
 			metadataSeen = true
-			s.ID, s.Dir = v.Payload.ID, v.Payload.Cwd
+			s.ID, s.Dir, s.Originator = v.Payload.ID, v.Payload.Cwd, v.Payload.Originator
 			excluded = codexInternalSource(v.Payload.Source) || v.Payload.Originator == "codex_exec"
 			if excluded || s.ID == "" {
 				return false
 			}
 		case metadataSeen && s.Prompt == "" && v.Type == "response_item" && v.Payload.Type == "message" && v.Payload.Role == "user":
-			s.Prompt = promptOf(v.Payload.Content)
+			s.Prompt = s.firstPromptOf(v.Payload.Content)
 		case metadataSeen && s.Prompt == "" && v.Type == "event_msg" && v.Payload.Type == "user_message":
-			s.Prompt = oneLine(promptText(v.Payload.Message))
+			if decoded, ok := s.DecodeCodexFirstPrompt(v.Payload.Message, 0); ok {
+				s.Prompt = oneLine(decoded)
+			} else {
+				s.Prompt = oneLine(promptText(v.Payload.Message))
+			}
 		}
 		return s.ID == "" || s.Prompt == ""
 	})

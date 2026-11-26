@@ -241,7 +241,7 @@ func (f *frame) view(c *ui.Context) {
 		if h != f.active && h.a.started {
 			h.a.setServices(f.services)
 			h.a.drain()
-			h.a.showChatTaskNotices(c)
+			h.a.showChatTaskNotices(c, false)
 		}
 	}
 	h := f.active

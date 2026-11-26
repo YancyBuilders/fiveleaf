@@ -32,28 +32,38 @@ var (
 	ErrTextTooLarge    = errors.New("ACP text exceeds 4 MiB")
 	ErrUnknownSession  = errors.New("unknown ACP session")
 	ErrClosed          = errors.New("ACP connection is closed")
+	ErrSessionInUse    = errors.New("ACP session is in use by another client")
 	errWriteTimeout    = errors.New("ACP transport write timed out")
 )
 
+var (
+	sharedMu      sync.Mutex
+	sharedClients = make(map[string]map[*Client]struct{})
+)
+
 type sessionState struct {
-	active             bool
-	cancelled          bool
-	interrupted        bool
-	permissions        map[*permissionWait]struct{}
-	modes              []ModeChoice
-	currentMode        string
-	settingMode        bool
-	modeRevision       uint64
-	legacyModeRevision uint64
-	configOptions      []sdk.SessionConfigOption
-	legacyModels       map[string]bool
-	legacyChoices      []ModelChoice
-	currentModel       string
-	settingModel       bool
-	modelRevision      uint64
-	usage              *UsageState
-	usageRevision      uint64
-	commands           []Command
+	active                bool
+	cancelled             bool
+	interrupted           bool
+	promptIdle            *promptIdleWatch
+	promptStop            *stoppablePrompt
+	permissions           map[*permissionWait]struct{}
+	modes                 []ModeChoice
+	currentMode           string
+	settingMode           bool
+	modeRevision          uint64
+	legacyModeRevision    uint64
+	configOptions         []sdk.SessionConfigOption
+	legacyModels          map[string]bool
+	legacyChoices         []ModelChoice
+	currentModel          string
+	settingModel          bool
+	modelRevision         uint64
+	usage                 *UsageState
+	promptTokens          promptUsage
+	promptTokensAvailable bool
+	usageRevision         uint64
+	commands              []Command
 }
 
 type permissionWait struct{ cancel context.CancelFunc }
@@ -166,6 +176,10 @@ func Start(ctx context.Context, config Config, cwd string, handler Handler) (*Cl
 			c.mu.Unlock()
 			c.shutdown(false)
 		}
+	}()
+	go func() {
+		<-c.done
+		releaseSharedSessions(c)
 	}()
 	return c, nil
 }
@@ -346,25 +360,122 @@ func (c *Client) OpenSession(ctx context.Context, previousID string, needHistory
 	if err := c.checkReady(); err != nil {
 		return Session{}, err
 	}
+	return c.openSession(ctx, previousID, c.sessionOpenMethod(previousID, needHistory), needHistory)
+}
+
+// ReattachSession reconnects an existing conversation whose history the caller
+// already has. It starts a session only when the previous one cannot be reopened.
+func (c *Client) ReattachSession(ctx context.Context, previousID string) (Session, error) {
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
+	if err := c.checkReady(); err != nil {
+		return Session{}, err
+	}
+	if err := c.ClaimSession(previousID); err != nil {
+		return Session{}, err
+	}
+	method := c.sessionOpenMethod(previousID, false)
+	session, err := c.openSession(ctx, previousID, method, false)
+	if err == nil || method == "session/new" {
+		return session, err
+	}
+	if activeSessionWriter(err, previousID) {
+		c.ReleaseSession(previousID)
+		return session, errors.Join(ErrSessionInUse, err)
+	}
+	if method == "session/resume" && c.initResult.AgentCapabilities.LoadSession && sessionMethodUnavailable(err, method) {
+		method = "session/load"
+		session, err = c.openSession(ctx, previousID, method, false)
+	}
+	if sessionMethodUnavailable(err, method) || c.sessionMissing(err, previousID) {
+		c.ReleaseSession(previousID)
+		return c.openSession(ctx, "", "session/new", false)
+	}
+	c.ReleaseSession(previousID)
+	return session, err
+}
+
+func activeSessionWriter(err error, sessionID string) bool {
+	var rpc *sdk.RequestError
+	if !errors.As(err, &rpc) || rpc.Code != -32600 {
+		return false
+	}
+	data, _ := rpc.Data.(map[string]any)
+	return data["reason"] == "thread_active_writer" && data["threadId"] == sessionID
+}
+
+func sessionMethodUnavailable(err error, method string) bool {
+	var rpc *sdk.RequestError
+	if !errors.As(err, &rpc) || rpc.Code != -32601 {
+		return false
+	}
+	data, _ := rpc.Data.(map[string]any)
+	requestedMethod, explicit := data["method"]
+	return !explicit || requestedMethod == method
+}
+
+func (c *Client) sessionMissing(err error, previousID string) bool {
+	var rpc *sdk.RequestError
+	if !errors.As(err, &rpc) {
+		return false
+	}
+	data, _ := rpc.Data.(map[string]any)
+	if rpc.Code == -32002 {
+		return data["sessionId"] == previousID
+	}
+	if rpc.Code != -32603 || c.initResult.AgentInfo == nil {
+		return false
+	}
+	switch c.initResult.AgentInfo.Name {
+	case "@agentclientprotocol/codex-acp", "@zed-industries/codex-acp":
+		return data["details"] == "no rollout found for thread id "+previousID
+	default:
+		return false
+	}
+}
+
+func (c *Client) sessionOpenMethod(previousID string, needHistory bool) string {
 	caps := c.initResult.AgentCapabilities
-	method := "session/new"
-	var params any = sdk.NewSessionRequest{Cwd: c.root, McpServers: []sdk.McpServer{}}
-	if previousID != "" {
-		switch {
-		case caps.LoadSession && (needHistory || caps.SessionCapabilities.Resume == nil):
-			method, params = "session/load", sdk.LoadSessionRequest{Cwd: c.root, SessionId: sdk.SessionId(previousID), McpServers: []sdk.McpServer{}}
-		case caps.SessionCapabilities.Resume != nil:
-			method, params = "session/resume", sdk.ResumeSessionRequest{Cwd: c.root, SessionId: sdk.SessionId(previousID), McpServers: []sdk.McpServer{}}
-		case needHistory:
-			return Session{}, errors.New("the agent cannot restore this session without a local transcript")
-		}
+	switch {
+	case previousID == "":
+		return "session/new"
+	case caps.LoadSession && (needHistory || caps.SessionCapabilities.Resume == nil):
+		return "session/load"
+	case caps.SessionCapabilities.Resume != nil:
+		return "session/resume"
+	case needHistory:
+		return ""
+	default:
+		return "session/new"
+	}
+}
+
+func (c *Client) openSession(ctx context.Context, previousID, method string, needHistory bool) (Session, error) {
+	var params any
+	switch method {
+	case "session/new":
+		params = sdk.NewSessionRequest{Cwd: c.root, McpServers: []sdk.McpServer{}}
+	case "session/load":
+		params = sdk.LoadSessionRequest{Cwd: c.root, SessionId: sdk.SessionId(previousID), McpServers: []sdk.McpServer{}}
+	case "session/resume":
+		params = struct {
+			Cwd        string          `json:"cwd"`
+			SessionID  sdk.SessionId   `json:"sessionId"`
+			MCPServers []sdk.McpServer `json:"mcpServers"`
+		}{Cwd: c.root, SessionID: sdk.SessionId(previousID), MCPServers: []sdk.McpServer{}}
+	default:
+		return Session{}, errors.New("the agent cannot restore this session without a local transcript")
 	}
 	c.updateMu.Lock()
 	c.creating, c.early = true, nil
 	if method == "session/load" {
 		c.loading = previousID
 		if needHistory {
-			c.replay = &sessionReplay{}
+			name := ""
+			if agent := c.initResult.AgentInfo; agent != nil {
+				name = agent.Name
+			}
+			c.replay = &sessionReplay{codexThoughtParts: name == "@agentclientprotocol/codex-acp" || name == "@zed-industries/codex-acp"}
 		}
 	}
 	c.updateMu.Unlock()
@@ -374,9 +485,8 @@ func (c *Client) OpenSession(ctx context.Context, previousID string, needHistory
 	if c.replay != nil {
 		result.Replay, result.PartialReplay = c.replay.messages, c.replay.partial
 	}
-	c.creating, c.loading, c.replay = false, "", nil
-	defer func() { c.early = nil }()
 	if err != nil {
+		c.creating, c.loading, c.replay, c.early = false, "", nil, nil
 		return result, err
 	}
 	if method != "session/new" {
@@ -425,61 +535,120 @@ func (c *Client) OpenSession(ctx context.Context, previousID string, needHistory
 			c.handler.Update(pending.update)
 		}
 	}
+	c.creating, c.loading, c.replay, c.early = false, "", nil, nil
 	return result, nil
 }
 
 func (c *Client) Prompt(ctx context.Context, sessionID string, blocks []ContentBlock) (PromptResult, error) {
+	return c.prompt(ctx, sessionID, blocks, 0)
+}
+
+func (c *Client) PromptWithIdleTimeout(ctx context.Context, sessionID string, blocks []ContentBlock, idle time.Duration) (PromptResult, error) {
+	return c.prompt(ctx, sessionID, blocks, idle)
+}
+
+// PromptEvents reports a full transport write or a later idle cancellation.
+// Callbacks run before PromptWithStop returns. They must not block or call ACP
+// methods, since Written runs while the SDK holds its write lock.
+type PromptEvents struct {
+	Written func()
+	Idle    func()
+}
+
+// PromptWithStop waits for the adapter's original reply after a Stop request.
+// A partial or otherwise uncertain transport write is reported as sent.
+func (c *Client) PromptWithStop(ctx context.Context, sessionID string, blocks []ContentBlock, idle time.Duration, events *PromptEvents) (PromptResult, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return PromptResult{}, false, err
+	}
+	params, session, err := c.reservePrompt(sessionID, blocks)
+	if err != nil {
+		return PromptResult{}, false, err
+	}
+	defer c.finishPrompt(sessionID, session)
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	stop := &stoppablePrompt{ctx: ctx, cancel: cancel, idle: idle, written: make(chan struct{})}
+	if events != nil {
+		stop.events = *events
+	}
+	c.mu.Lock()
+	session.promptStop = stop
+	c.mu.Unlock()
+	return c.requestStoppablePrompt(params, stop)
+}
+
+func (c *Client) reservePrompt(sessionID string, blocks []ContentBlock) (sdk.PromptRequest, *sessionState, error) {
 	if err := c.checkReady(); err != nil {
-		return PromptResult{}, err
+		return sdk.PromptRequest{}, nil, err
 	}
 	if len(blocks) == 0 {
-		return PromptResult{}, errors.New("ACP prompt is empty")
+		return sdk.PromptRequest{}, nil, errors.New("ACP prompt is empty")
 	}
 	params := sdk.PromptRequest{SessionId: sdk.SessionId(sessionID), Prompt: blocks}
 	encoded, err := json.Marshal(params)
 	if err != nil {
-		return PromptResult{}, err
+		return sdk.PromptRequest{}, nil, err
 	}
 	if len(encoded) > MaxMessageBytes-1024 {
-		return PromptResult{}, ErrMessageTooLarge
+		return sdk.PromptRequest{}, nil, ErrMessageTooLarge
 	}
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	caps := c.initResult.AgentCapabilities.PromptCapabilities
 	for _, block := range blocks {
 		if err := block.Validate(); err != nil {
-			c.mu.Unlock()
-			return PromptResult{}, err
+			return sdk.PromptRequest{}, nil, err
 		}
 		if block.Resource != nil && !caps.EmbeddedContext || block.Image != nil && !caps.Image || block.Audio != nil && !caps.Audio {
-			c.mu.Unlock()
-			return PromptResult{}, errors.New("agent does not support this prompt content type")
+			return sdk.PromptRequest{}, nil, errors.New("agent does not support this prompt content type")
 		}
 	}
 	s, ok := c.sessions[sessionID]
 	if !ok {
-		c.mu.Unlock()
-		return PromptResult{}, ErrUnknownSession
+		return sdk.PromptRequest{}, nil, ErrUnknownSession
 	}
 	if s.active {
-		c.mu.Unlock()
-		return PromptResult{}, errors.New("ACP session is already responding")
+		return sdk.PromptRequest{}, nil, errors.New("ACP session is already responding")
 	}
 	if s.settingModel || s.settingMode {
-		c.mu.Unlock()
-		return PromptResult{}, errors.New("ACP session is still being configured")
+		return sdk.PromptRequest{}, nil, errors.New("ACP session is still being configured")
 	}
 	if s.interrupted {
-		c.mu.Unlock()
-		return PromptResult{}, errors.New("ACP turn was interrupted without acknowledgement; start a new session")
+		return sdk.PromptRequest{}, nil, errors.New("ACP turn was interrupted without acknowledgement; start a new session")
 	}
 	s.active, s.cancelled = true, false
+	s.promptTokensAvailable = false
+	return params, s, nil
+}
+
+func (c *Client) finishPrompt(sessionID string, session *sessionState) {
+	c.cancelPermissions(sessionID)
+	c.ReleaseSession(sessionID)
+	c.mu.Lock()
+	if watch := session.promptIdle; watch != nil {
+		session.promptIdle = nil
+		watch.timer.Stop()
+	}
+	session.promptStop = nil
+	session.active = false
 	c.mu.Unlock()
-	defer func() {
+}
+
+func (c *Client) prompt(ctx context.Context, sessionID string, blocks []ContentBlock, idle time.Duration) (PromptResult, error) {
+	params, s, err := c.reservePrompt(sessionID, blocks)
+	if err != nil {
+		return PromptResult{}, err
+	}
+	if idle > 0 {
+		var cancel context.CancelCauseFunc
+		ctx, cancel = context.WithCancelCause(ctx)
+		defer cancel(nil)
 		c.mu.Lock()
-		s.active = false
+		c.watchPromptIdle(s, idle, func() { cancel(context.DeadlineExceeded) })
 		c.mu.Unlock()
-		c.cancelPermissions(sessionID)
-	}()
+	}
+	defer c.finishPrompt(sessionID, s)
 	// Cancel UI permissions even when the peer does not acknowledge stopping.
 	cancelSent := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
@@ -492,12 +661,21 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, blocks []ContentB
 		}
 	}()
 	result, err := request[PromptResult](c, ctx, "session/prompt", params)
+	if err == nil {
+		result = capturePromptUsage(sessionID, result)
+		c.mu.Lock()
+		s.promptTokens, s.promptTokensAvailable = result.tokens, result.tokens.Input+result.tokens.CachedInput > 0
+		c.mu.Unlock()
+	}
 	if ctx.Err() != nil && err != nil {
 		// Without the prompt response the old turn may still be running. Do
 		// not silently send a concurrent prompt into the same agent session.
 		c.mu.Lock()
 		s.interrupted = true
 		c.mu.Unlock()
+		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+			err = context.DeadlineExceeded
+		}
 	}
 	return result, err
 }
@@ -523,6 +701,59 @@ func (c *Client) Cancel(ctx context.Context, sessionID string) error {
 	}
 	c.cancelPermissions(sessionID)
 	return c.conn.SendNotification(ctx, "session/cancel", sdk.CancelNotification{SessionId: sdk.SessionId(sessionID)})
+}
+
+// ClaimSession records which adapter owns a native session. A process that
+// crashes releases its claims as the client's done channel closes.
+func (c *Client) ClaimSession(sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+	owners := sharedClients[sessionID]
+	for owner := range owners {
+		if owner == c {
+			return nil
+		}
+		select {
+		case <-owner.Done():
+			delete(owners, owner)
+		default:
+			return ErrSessionInUse
+		}
+	}
+	if owners == nil {
+		owners = make(map[*Client]struct{})
+		sharedClients[sessionID] = owners
+	}
+	owners[c] = struct{}{}
+	return nil
+}
+
+func (c *Client) ReleaseSession(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+	releaseSharedSession(c, sessionID)
+}
+
+func releaseSharedSessions(c *Client) {
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+	for sessionID := range c.sessions {
+		releaseSharedSession(c, sessionID)
+	}
+}
+
+func releaseSharedSession(c *Client, sessionID string) {
+	owners := sharedClients[sessionID]
+	delete(owners, c)
+	if len(owners) == 0 {
+		delete(sharedClients, sessionID)
+	}
 }
 
 func (c *Client) SetMode(ctx context.Context, sessionID, modeID string) error {
@@ -779,17 +1010,31 @@ func (w messageWriter) Write(p []byte) (int, error) {
 	if w.client.ctx.Err() != nil {
 		return 0, ErrClosed
 	}
+	session, stop := w.client.stoppablePromptForFrame(p)
 	deadline := time.AfterFunc(writeTimeout, func() {
 		w.client.recordTransportError(errWriteTimeout)
 		w.client.shutdown(false)
 	})
+	if stop != nil {
+		if err := stop.ctx.Err(); err != nil {
+			deadline.Stop()
+			return 0, err
+		}
+		stop.sent = true
+	}
 	written, err := w.client.stdin.Write(p)
+	if err == nil && written != len(p) {
+		err = io.ErrShortWrite
+	}
 	if !deadline.Stop() {
 		return written, errWriteTimeout
 	}
 	if err != nil && w.client.ctx.Err() == nil {
 		w.client.recordTransportError(fmt.Errorf("write ACP message: %w", err))
 		w.client.shutdown(false)
+	}
+	if stop != nil && err == nil {
+		w.client.finishPromptWrite(session, stop)
 	}
 	return written, err
 }

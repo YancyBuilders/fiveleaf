@@ -6,9 +6,12 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
+	"fiveleaf/internal/acp"
+	"fiveleaf/internal/agents"
 	"fiveleaf/internal/roundtable"
 	"fiveleaf/internal/settings"
 )
@@ -62,6 +65,24 @@ func captureAgentContext(s *agentChat, messages []roundtable.Message) string {
 	return roundtable.FormatPrompt(messages)
 }
 
+func captureCodexAgentContext(chat *agentChat, text string) []acp.ContentBlock {
+	messages := chatContext(chat)
+	last := len(messages) - 1
+	if last >= 0 && messages[last].Role == "system" {
+		last--
+	}
+	if last >= 0 && messages[last].Role == "user" && messages[last].Text == text {
+		messages = slices.Delete(messages, last, last+1)
+	}
+	context := captureAgentContext(chat, messages)
+	chat.contextAccounting.input["user"] += agentContextTextTokens(text)
+	if context == "" && !agents.CodexPromptNeedsSeparateBody(text) {
+		return []acp.ContentBlock{acp.TextBlock(text)}
+	}
+	chat.contextAccounting.input["user"] += agentContextTextTokens(agents.CodexContextHeader)
+	return []acp.ContentBlock{acp.TextBlock(agents.CodexContextHeader + context), acp.TextBlock(text)}
+}
+
 func (p agentCompactionPolicy) forModel(model string) (known, enabled bool, reserve int) {
 	if !p.known {
 		return false, false, 0
@@ -76,12 +97,40 @@ func (p agentCompactionPolicy) forModel(model string) (known, enabled bool, rese
 	return true, p.enabled, reserve
 }
 
+func codexCompactionStatus(s *agentChat) agentCompactionStatus {
+	if s.sessionID == "" || !s.usesCodexThread() {
+		return agentCompactionUnreported
+	}
+	for _, tool := range slices.Backward(s.tools) {
+		if tool == nil || tool.sessionID != s.sessionID || tool.generation != s.generation ||
+			!codexCompactionTool(tool) {
+			continue
+		}
+		switch tool.status {
+		case "in_progress":
+			if s.busy && tool.turn == s.turn {
+				return agentCompactionRunning
+			}
+		case "completed":
+			return agentCompactionCompleted
+		case "failed":
+			return agentCompactionFailed
+		}
+		break
+	}
+	return agentCompactionManaged
+}
+
+func codexCompactionTool(tool *agentTool) bool {
+	return tool.kind == "think" && tool.title == "Compact conversation"
+}
+
 func (a *app) contextSnapshot(s *agentChat) agentContextSnapshot {
 	model := s.currentModel
 	if model == "" {
 		model = s.model()
 	}
-	snapshot := agentContextSnapshot{model: model}
+	snapshot := agentContextSnapshot{model: model, compactionStatus: codexCompactionStatus(s)}
 	for _, choice := range s.models {
 		if choice.ID == snapshot.model && choice.Name != "" {
 			snapshot.model = choice.Name
@@ -112,22 +161,34 @@ func (a *app) contextSnapshot(s *agentChat) agentContextSnapshot {
 				continue
 			}
 			switch message.role {
-			case "assistant":
+			case "assistant", "commentary":
 				estimates["assistant"] += agentContextTextTokens(message.text)
 			case "thought", "thinking":
 				estimates["thinking"] += agentContextTextTokens(message.text)
 			}
 		}
 		// Tool messages and s.tools share pointers; count each tool only here.
+		codex := snapshot.compactionStatus != agentCompactionUnreported
+		native := codex || s.continuation != nil && s.continuation.native
 		for _, tool := range s.tools {
 			if tool == nil || tool.sessionID != s.sessionID || tool.generation != s.generation {
+				continue
+			}
+			if native && tool.turn != s.turn {
+				continue
+			}
+			if codex && codexCompactionTool(tool) {
+				if tool.status == "completed" {
+					clear(estimates)
+					break
+				}
 				continue
 			}
 			if len(tool.rawInput) > 0 || tool.title != "" {
 				estimates["tool_calls"] += agentContextTextTokens(string(tool.rawInput)) + agentContextTextTokens(tool.title)
 			}
-			if tool.text != "" {
-				estimates["tool_output"] += agentContextTextTokens(tool.text)
+			if output := tool.outputText(); output != "" {
+				estimates["tool_output"] += agentContextTextTokens(output)
 			}
 		}
 	}
@@ -172,6 +233,65 @@ func isPiACP(config settings.AgentServer) bool {
 		}
 	}
 	return false
+}
+
+// piContextWindow returns the configured context window for a Pi model. Some
+// adapters report maxTokens (the output limit) as usage size; that is not the
+// context capacity and must not become the progress bar denominator.
+func piContextWindow(config settings.AgentServer, root, model string, reported int) (int, bool) {
+	if !isPiACP(config) || model == "" {
+		return 0, false
+	}
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return 0, false
+	}
+	env := func(name string) string {
+		if value, exists := config.Env[name]; exists {
+			return value
+		}
+		return os.Getenv(name)
+	}
+	home := env("HOME")
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	if resolved, err := filepath.EvalSymlinks(home); err == nil {
+		home = resolved
+	}
+	agentDir := env("PI_CODING_AGENT_DIR")
+	if agentDir == "" {
+		agentDir = filepath.Join(home, ".pi", "agent")
+	} else if agentDir == "~" || strings.HasPrefix(agentDir, "~/") {
+		agentDir = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(agentDir, "~"), "/"))
+	}
+	if !filepath.IsAbs(agentDir) {
+		agentDir = filepath.Join(root, agentDir)
+	}
+	var catalog struct {
+		Providers map[string]struct {
+			Models []struct {
+				ID            string `json:"id"`
+				ContextWindow int    `json:"contextWindow"`
+				MaxTokens     int    `json:"maxTokens"`
+			} `json:"models"`
+		} `json:"providers"`
+	}
+	if !readAgentContextJSON(filepath.Join(agentDir, "models.json"), &catalog) {
+		return 0, false
+	}
+	for _, entry := range catalog.Providers {
+		for _, candidate := range entry.Models {
+			if candidate.ID != model && !strings.HasSuffix(model, "/"+candidate.ID) {
+				continue
+			}
+			if candidate.ContextWindow > 0 && candidate.MaxTokens > 0 && reported == candidate.MaxTokens && reported != candidate.ContextWindow {
+				return candidate.ContextWindow, true
+			}
+			return 0, false
+		}
+	}
+	return 0, false
 }
 
 // Pi's settings are read when its ACP session is created. Only the compaction and

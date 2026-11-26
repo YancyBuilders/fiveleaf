@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"math"
 	"os"
 	"strings"
@@ -63,6 +64,242 @@ func TestAgentOutputKeepsToolCallsInOrder(t *testing.T) {
 	hs.settle()
 	if !hs.tt.HasText("package main") {
 		t.Fatal("the original tool entry did not receive its completed output")
+	}
+}
+
+func TestAgentACPCompletedToolDetailsAndReasoning(t *testing.T) {
+	hs, _, _ := lifecycleHarness(t, "codex-completed-tool-details")
+	app, chat := hs.a, hs.a.agent
+	app.openAgentPage()
+	hs.untilLong("Codex output fixture connection", func() bool { return chat.sessionID != "" })
+	lifecycleSend(t, hs, "Check both fixture results")
+	const thought = "The second result confirms the first."
+	const commandText = "command result: 检查通过\n"
+	const mcpText = "MCP lookup returned a match"
+	if chat.lastTask != agentTaskCompleted || len(chat.tools) != 2 ||
+		chat.tools[0].outputText() != commandText || !strings.Contains(chat.tools[1].outputText(), mcpText) {
+		t.Fatalf("completed turn lost details: state=%v, tools=%d", chat.lastTask, len(chat.tools))
+	}
+	if chat.scroll.MaxY <= 100 || chat.scroll.Y < chat.scroll.MaxY-1 || hs.tt.HasText(thought) {
+		t.Fatalf("expected the long completed reply to fill the viewport: scroll=%v/%v", chat.scroll.Y, chat.scroll.MaxY)
+	}
+	hs.shot("agent-completed-reply-reasoning-link")
+	if err := hs.tt.Click(locales.AgentReviewReasoning()); err != nil {
+		t.Fatal(err)
+	}
+	hs.settle()
+	if !hs.tt.HasText(thought) || !hs.tt.HasText("The lookup is consistent with the command output.") || chat.scroll.Y >= chat.scroll.MaxY-10 {
+		t.Fatal("the reasoning link did not open the earlier content in view")
+	}
+	hs.clickDetail(locales.AgentToolCalls())
+	hs.clickDetail("Run fixture")
+	if !hs.tt.HasText(commandText) || !hs.tt.HasText("printf fixture") {
+		t.Fatal("the completed command card did not show the input and streamed output")
+	}
+	hs.clickDetail(locales.AgentCopyToolOutput() + ": Run fixture")
+	if hs.tt.Clipboard() != commandText {
+		t.Fatalf("command output copy changed its fragments: %q", hs.tt.Clipboard())
+	}
+	hs.clickDetail("mcp.fixture.lookup")
+	if !hs.tt.HasText("fixture request") || hs.tt.HasText("not a displayed parameter") || hs.tt.HasText("waiting for lookup") ||
+		!strings.Contains(strings.Join(hs.tt.Texts(), "\n"), mcpText) {
+		t.Fatal("the completed MCP card did not show the final result and useful request details")
+	}
+	hs.shot("agent-completed-tool-and-reasoning-expanded")
+}
+
+func TestAgentOutputToolPatchPreservesAndClearsProvidedLists(t *testing.T) {
+	hs := newHarness(t, true)
+	agentViewFixture(hs)
+	chat := hs.a.agent
+	chat.sessionID = "tool-patches"
+	agentOutputUpdate(t, hs, map[string]any{
+		"sessionUpdate": "tool_call", "toolCallId": "lookup", "title": "Inspect fixture", "status": "in_progress",
+		"content": []any{
+			map[string]any{"type": "content", "content": map[string]string{"type": "resource_link", "uri": "DATA:image/png;base64,fixture123", "name": "fixture image"}},
+			map[string]any{"type": "content", "content": map[string]string{"type": "text", "text": "initial content"}},
+		},
+		"locations": []any{map[string]any{"path": hs.path("main.go"), "line": 3}},
+	})
+	agentOutputUpdate(t, hs, map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "lookup", "status": "completed"})
+	tool := chat.tools[0]
+	if tool.outputText() != "fixture image\ninitial content\n" || len(tool.locations) != 1 || tool.status != "completed" || len(tool.sources.content) != 0 {
+		t.Fatal("a status-only patch replaced the tool details")
+	}
+	agentOutputUpdate(t, hs, map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "lookup", "content": []any{}, "locations": []any{}})
+	if len(chat.tools) != 1 || tool.outputText() != "" || len(tool.locations) != 0 {
+		t.Fatal("explicit empty lists did not clear the original tool card")
+	}
+}
+
+func TestAgentOutputCapsStreamAtUTF8Boundary(t *testing.T) {
+	prefix := strings.Repeat("x", agentTextLimit-2)
+	var output agentToolOutputBuffer
+	output.append(prefix)
+	output.append("🧪")
+	output.append("ok")
+	if output.String() != prefix {
+		t.Fatal("truncation should retain a contiguous prefix across later output fragments")
+	}
+}
+
+func TestAgentOutputSeparatesProgressFromFinal(t *testing.T) {
+	hs := newHarness(t, true)
+	agentViewFixture(hs)
+	chat := hs.a.agent
+	chat.busy = true
+	progress := &agentMessage{role: "commentary", text: "Inspecting the project structure."}
+	chat.messages = []*agentMessage{{role: "user", text: "Find the source of this error."}, progress, {role: "thought", text: " \t\n"}}
+	hs.settle()
+	if !hs.tt.HasText(locales.AgentReplyProgress()) || hs.tt.HasText(locales.AgentFinalReply()) || hs.tt.HasText(locales.AgentThought()) {
+		t.Fatal("an unfinished update should show progress without empty thought or final sections")
+	}
+	thought := &agentMessage{role: "thought", text: "Check the exception first.\n\nInspect the fallback path."}
+	chat.messages = append(chat.messages, thought, &agentMessage{role: "thought", text: "\u3000"})
+	hs.settle()
+	if !hs.tt.HasText("Inspect the fallback path.") {
+		t.Fatal("an empty update closed active reasoning")
+	}
+	reply := &agentMessage{role: "assistant", text: "The fallback path produced the error."}
+	chat.messages = append(chat.messages, reply)
+	hs.settle()
+	heading, hasHeading := hs.tt.Find(locales.AgentFinalReply())
+	answer, hasAnswer := hs.tt.Find(reply.text)
+	update, hasUpdate := hs.tt.Find(progress.text)
+	if !hasHeading || !hasAnswer || !hasUpdate || update.Y >= heading.Y || heading.Y >= answer.Y || answer.X >= update.X || hs.tt.HasText("Inspect the fallback path.") {
+		t.Fatalf("progress, reasoning and final reply are not separated: progress=%+v final=%+v answer=%+v", update, heading, answer)
+	}
+	if err := hs.tt.Click(locales.AgentThought()); err != nil {
+		t.Fatal(err)
+	}
+	if !hs.tt.HasText("Inspect the fallback path.") {
+		t.Fatal("finished reasoning lost its details")
+	}
+}
+
+func TestAgentOutputGroupsOnlyAdjacentToolCalls(t *testing.T) {
+	hs := newHarness(t, true)
+	agentViewFixture(hs)
+	chat := hs.a.agent
+	first := &agentTool{title: "Search repository", kind: "search", status: "completed", text: "Search results"}
+	second := &agentTool{title: "Read main.go", kind: "read", status: "completed", text: "package main"}
+	last := &agentTool{title: "Read README.md", kind: "read", status: "completed", text: "README"}
+	update := &agentMessage{role: "commentary", text: "The entry point is located."}
+	chat.tools = []*agentTool{first, second, last}
+	chat.messages = []*agentMessage{{role: "tool", tool: first}, {role: "thought", text: "\n "}, {role: "tool", tool: second}, update, {role: "tool", tool: last}}
+	hs.settle()
+	group := locales.AgentToolCalls()
+	groupBounds := hs.detailBounds(group)
+	if !hs.tt.HasText(locales.AgentToolCallsCount(2)) || hs.tt.HasText(first.title) || hs.tt.HasText(second.title) || hs.tt.HasText(locales.AgentThought()) {
+		t.Fatal("completed adjacent calls should collapse into one group across an empty thought")
+	}
+	updateBounds, lastBounds := hs.detailBounds(update.text), hs.detailBounds(last.title)
+	if groupBounds.Y >= updateBounds.Y || updateBounds.Y >= lastBounds.Y {
+		t.Fatal("grouping crossed a public update or changed tool order")
+	}
+	hs.clickDetail(group)
+	firstBounds, secondBounds := hs.detailBounds(first.title), hs.detailBounds(second.title)
+	if firstBounds.Y >= secondBounds.Y || secondBounds.Y >= hs.detailBounds(update.text).Y {
+		t.Fatal("unfolding tools changed their original order")
+	}
+	hs.clickDetail(second.title)
+	if !hs.tt.HasText(second.text) {
+		t.Fatal("unfolding a tool group lost the individual disclosure")
+	}
+	hs.clickDetail(locales.AgentCopyToolOutput() + ": " + second.title)
+	if hs.tt.Clipboard() != second.text {
+		t.Fatal("tool copy changed its output")
+	}
+}
+
+func TestAgentOutputLabelsCodexReplyAfterToolOnlyActivity(t *testing.T) {
+	hs := newHarness(t, true)
+	agentViewFixture(hs)
+	chat := hs.a.agent
+	tool := &agentTool{title: "Read main.go", kind: "read", status: "completed"}
+	chat.messages = []*agentMessage{{role: "user", text: "Check main.go"}, {role: "tool", tool: tool}, {role: "assistant", text: "Found the entry point."}}
+	hs.settle()
+	if hs.tt.HasText(locales.AgentFinalReply()) {
+		t.Fatal("an unclassified provider's normal reply was marked final")
+	}
+	chat.adapterName = "@agentclientprotocol/codex-acp"
+	hs.settle()
+	if !hs.tt.HasText(locales.AgentFinalReply()) {
+		t.Fatal("a completed Codex reply following tools lacked a final answer label")
+	}
+	chat.messages = []*agentMessage{{role: "user", text: "Tell me the date"}, {role: "assistant", text: "Here is the date."}}
+	hs.settle()
+	if hs.tt.HasText(locales.AgentFinalReply()) {
+		t.Fatal("a plain reply gained a redundant label")
+	}
+}
+
+func TestAgentOutputGroupedToolFailureStaysActionable(t *testing.T) {
+	hs := newHarness(t, true)
+	agentViewFixture(hs)
+	chat := hs.a.agent
+	chat.busy = true
+	first := &agentTool{title: "Run search", kind: "execute", status: "completed", text: "Long result from search"}
+	last := &agentTool{title: "Update main.go", kind: "edit", status: "running"}
+	chat.tools = []*agentTool{first, last}
+	chat.messages = []*agentMessage{{role: "tool", tool: first}, {role: "tool", tool: last}}
+	hs.settle()
+	if !hs.tt.HasText(last.title) || !hs.tt.HasText(locales.AgentStatusRunning()) || hs.tt.HasText(first.text) {
+		t.Fatal("the active group should show its tool rows with completed output folded")
+	}
+	last.status = "completed"
+	hs.settle()
+	if !hs.tt.HasText(last.title) {
+		t.Fatal("tool completion closed an active group that can still grow")
+	}
+	hs.clickDetail(locales.AgentToolCalls())
+	last.status, last.text = "failed", "Tool error details"
+	last.changes = []agentChange{{path: hs.path("main.go"), oldText: "before\n", newText: "after\n", existed: true}}
+	hs.a.newFile()
+	hs.settle()
+	hs.a.openChatPage(chat)
+	hs.settle()
+	if !hs.tt.HasText(locales.AgentStatusFailed()) || hs.tt.HasText(last.title) {
+		t.Fatal("the manual collapse was lost or hid the failure status")
+	}
+	hs.clickDetail(locales.AgentToolCalls())
+	if !hs.tt.HasText(last.text) {
+		t.Fatal("reopening the group did not show failure details")
+	}
+	hs.clickDetail(locales.AgentReviewChange() + ": main.go")
+	if diff := hs.a.activeTab().diff; diff == nil || len(diff.files) != 1 || diff.files[0].new.text != "after\n" {
+		t.Fatal("the group lost the review action or its captured diff")
+	}
+}
+
+func TestAgentOutputKeepsOpenToolGroupWhileReading(t *testing.T) {
+	hs := newHarness(t, true)
+	agentViewFixture(hs)
+	chat := hs.a.agent
+	chat.busy = true
+	first := &agentTool{title: "Read main.go", kind: "read", status: "completed"}
+	last := &agentTool{title: "Scan workspace", kind: "search", status: "running"}
+	chat.messages = []*agentMessage{
+		{role: "assistant", text: strings.Repeat("Earlier output.\n\n", 40)},
+		{role: "tool", tool: first}, {role: "tool", tool: last},
+	}
+	hs.settle()
+	chat.scroll.Y = chat.scroll.MaxY - 24
+	hs.settle()
+	position := chat.scroll.Y
+	if chat.followingOutput() || !hs.tt.HasText(last.title) {
+		t.Fatal("expected to be reading the open tool group above the latest output")
+	}
+	last.status = "completed"
+	chat.messages = append(chat.messages, &agentMessage{role: "assistant", text: "Latest answer."})
+	chat.busy = false
+	hs.settle()
+	if chat.scroll.Y != position || !hs.tt.HasText(last.title) {
+		t.Fatal("finishing the turn closed the tool group the reader was inspecting")
+	}
+	hs.clickDetail(locales.AgentJumpLatest())
+	if hs.tt.HasText(last.title) {
+		t.Fatal("returning to the latest answer did not collapse the finished group")
 	}
 }
 
@@ -136,6 +373,57 @@ func TestAgentThoughtManualCollapseStaysClosedDuringStream(t *testing.T) {
 	agentOutputChunk(t, hs, "agent_thought_chunk", " More reasoning.")
 	if hs.tt.HasText("Reasoning body.") || hs.a.agent.messages[0].expanded {
 		t.Fatal("another streamed thinking chunk reopened a manually folded block")
+	}
+}
+
+func TestAgentThoughtUsesCompactDisclosureAndDistinctInk(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dark=%v", dark), func(t *testing.T) {
+			hs := newHarness(t, dark)
+			agentViewFixture(hs)
+			const heading = "Considering the query."
+			const details = "WHY THE QUERY TAKES SO LONG."
+			const answer = "THE QUERY REACHED ITS LIMIT."
+			thought := &agentMessage{role: "thought", text: heading + "\n\n" + details}
+			hs.a.agent.messages = []*agentMessage{thought, {role: "assistant", text: answer}}
+			hs.settle()
+			toggle := hs.detailBounds(locales.AgentThought())
+			preview := hs.detailBounds(heading + "…")
+			if toggle.W <= 0 || toggle.W > 30 || toggle.X+toggle.W > preview.X ||
+				preview.Y >= toggle.Y+toggle.H || preview.Y+preview.H <= toggle.Y {
+				t.Fatalf("expected a compact disclosure beside the preview: button=%+v preview=%+v", toggle, preview)
+			}
+			hs.tt.ClickAt(preview.X+preview.W/2, preview.Y+preview.H/2)
+			hs.settle()
+			if thought.expansionSet || hs.tt.HasText(details) {
+				t.Fatal("the adjacent preview toggled the disclosure")
+			}
+			hs.clickDetail(locales.AgentThought())
+			if !hs.tt.Focused(locales.AgentThought()) || !hs.tt.HasText(details) {
+				t.Fatal("the named disclosure did not focus and expand")
+			}
+			frame := hs.tt.Image()
+			textPixels := func(text string, ink ui.Color) int {
+				rect := hs.detailBounds(text)
+				area := image.Rect(int(rect.X), int(rect.Y), int(math.Ceil(float64(rect.X+rect.W))), int(math.Ceil(float64(rect.Y+rect.H))))
+				return agentMarkdownColorPixels(frame.SubImage(area).(*image.RGBA), ink)
+			}
+			bodyInk := hs.a.pal.text
+			thoughtInk := agentThoughtColor(hs.a.pal)
+			if got := textPixels(answer, bodyInk); got < 20 {
+				t.Fatalf("the public reply lost its normal text color, only %d pixels", got)
+			}
+			if got := textPixels(details, thoughtInk); got < 20 {
+				t.Fatalf("reasoning was not painted in the theme's distinct color (%d pixels)", got)
+			}
+			if got := textPixels(details, bodyInk); got >= 20 {
+				t.Fatalf("reasoning shares the public reply color (%d pixels)", got)
+			}
+			hs.key(0, ui.KeyEnter)
+			if !hs.tt.Focused(locales.AgentThought()) || hs.tt.HasText(details) {
+				t.Fatal("the disclosure did not retain focus and collapse using Enter")
+			}
+		})
 	}
 }
 
@@ -281,5 +569,49 @@ func TestShotAgentRichOutput(t *testing.T) {
 				hs.shot(fmt.Sprintf("agent-rich-narrow-page-%s-dark-%v", language, dark))
 			})
 		}
+	}
+}
+
+func TestShotAgentTurnSections(t *testing.T) {
+	if os.Getenv("SHOTS") == "" {
+		t.Skip("SHOTS is not set")
+	}
+	before := i18n.Locale()
+	i18n.SetLocaleFunc(func() string { return "zh-Hans" })
+	t.Cleanup(func() { i18n.SetLocaleFunc(func() string { return before }) })
+	withAppearancePlugins(t)
+	for _, dark := range []bool{true, false} {
+		hs := newHarness(t, dark)
+		hs.tt.SetLocale("zh-Hans")
+		hs.a.settings.MicaEnabled, hs.a.settings.MicaAnimation = true, false
+		if dark {
+			hs.a.setTheme(themeOneDarkPro)
+		}
+		agentViewFixture(hs)
+		chat := hs.a.agent
+		first := &agentTool{title: "查找导出请求的日志", kind: "search", status: "completed"}
+		second := &agentTool{title: "读取查询超时配置", kind: "read", status: "completed", text: "queryTimeout = 30s"}
+		chat.tools = []*agentTool{first, second}
+		thought := &agentMessage{role: "thought", text: "按请求阶段核对耗时。\n\n先确认导出在哪一步结束。"}
+		chat.messages = []*agentMessage{
+			{role: "user", text: "帮我看看统计导出为什么超时。"},
+			{role: "commentary", text: "我先对照这次请求的时间戳和查询配置。"},
+			thought,
+			{role: "tool", tool: first},
+			{role: "tool", tool: second},
+			{role: "assistant", text: "## 超时发生在查询阶段\n\n日志里，导出请求等待明细查询 **30 秒** 后达到时限。\n\n- 导出任务已提交。\n- 查询未能在时限内返回。\n- 文件写入阶段尚未开始。"},
+		}
+		hs.tt.SetSize(1440, 820)
+		hs.settle()
+		hs.shot(fmt.Sprintf("agent-turn-sections-dark-%v", dark))
+		hs.clickDetail(locales.AgentThought())
+		hs.tt.Move(100, 200)
+		hs.settle()
+		hs.shot(fmt.Sprintf("agent-thought-expanded-dark-%v", dark))
+		hs.clickDetail(locales.AgentThought())
+		sizeChatWorkspace(hs, 390)
+		hs.settle()
+		hs.clickDetail(locales.AgentToolCalls())
+		hs.shot(fmt.Sprintf("agent-turn-sections-expanded-narrow-dark-%v", dark))
 	}
 }

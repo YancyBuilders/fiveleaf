@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"image"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -120,7 +121,8 @@ func TestAgentPermissionScopeAndReadingPosition(t *testing.T) {
 	chat.busy = true
 	chat.messages = []*agentMessage{{role: "assistant", text: strings.Repeat("Earlier paragraph.\n\n", 45)}}
 	hs.settle()
-	previousEnd := chat.scroll.MaxY
+	chat.scroll.Y = 0
+	hs.settle()
 	var answers []string
 	request := &agentPermission{title: "Allow edits?", options: []acp.PermissionOption{
 		{OptionId: "project", Kind: "allow_always", Name: "Trust this project"},
@@ -129,14 +131,15 @@ func TestAgentPermissionScopeAndReadingPosition(t *testing.T) {
 	}, choose: func(id string) { answers = append(answers, id) }}
 	chat.permissions = append(chat.permissions, request)
 	hs.settle()
-	if chat.scroll.MaxY <= previousEnd || chat.scroll.Y < chat.scroll.MaxY-1 {
-		t.Fatal("new permission did not follow the end of the conversation")
+	if chat.scroll.Y != 0 || chat.scroll.MaxY == 0 {
+		t.Fatal("new permission moved the reader away from earlier messages")
 	}
 	once := hs.detailBounds("Allow this edit")
 	future := hs.detailBounds(locales.AgentPermissionFuture())
 	always := hs.detailBounds("Trust this project")
-	if future.Y < once.Y+once.H || always.Y < future.Y+future.H || len(answers) != 0 {
-		t.Fatal("persistent options must be separate and require an explicit choice")
+	input := hs.detailBounds(locales.AgentDraft())
+	if future.Y < once.Y+once.H || always.Y < future.Y+future.H || always.Y+always.H > input.Y || len(answers) != 0 {
+		t.Fatal("the approval choices must stay above the composer, with persistent options separate")
 	}
 	for range 2 {
 		if err := hs.tt.Click("Trust this project"); err != nil {
@@ -147,12 +150,64 @@ func TestAgentPermissionScopeAndReadingPosition(t *testing.T) {
 	if !slices.Equal(answers, []string{"project"}) {
 		t.Fatalf("expected only the selected option ID once, got %v", answers)
 	}
-	chat.scroll.Y = 0
+	if chat.scroll.Y != 0 {
+		t.Fatal("answering a permission moved the transcript")
+	}
+	chat.permissions = nil
+	chat.scroll.Y = chat.scroll.MaxY
 	hs.settle()
+	chat.scroll.Y = chat.scroll.MaxY
 	chat.permissions = append(chat.permissions, &agentPermission{title: "Another request"})
 	hs.settle()
-	if chat.scroll.Y != 0 {
-		t.Fatal("a later permission moved the reader away from earlier messages")
+	if chat.scroll.Y != chat.scroll.MaxY {
+		t.Fatal("a later permission displaced the visible end of the transcript")
+	}
+}
+
+func TestAgentPermissionDockInShortDetachedChat(t *testing.T) {
+	src := newHarness(t, false)
+	agentViewFixture(src)
+	chat := src.a.agent
+	chat.busy = true
+	chat.messages = []*agentMessage{{role: "assistant", text: strings.Repeat("Earlier paragraph.\n\n", 45)}}
+	chat.queued = &agentQueuedDraft{draft: chatSourceDraft{text: "Queued question"}}
+	dst := tabWindowHarness(t, src)
+	src.a.detachTab(src.a.activeTab(), nil)
+	dst.tt.SetSize(320, 250)
+	dst.settle()
+	chat.scroll.Y = 0
+	dst.settle()
+	stopBefore := dst.detailBounds(locales.AgentStop())
+	const title, label = "Permission for current operation", "Approve operation"
+	var chosen string
+	chat.plan = []agentPlan{{content: "Review output", status: "in_progress"}}
+	chat.permissions = []*agentPermission{{
+		title: title, detail: strings.Repeat("A line about the operation.\n", 18),
+		options: []acp.PermissionOption{{OptionId: "allow", Name: label, Kind: "allow_once"}},
+		choose:  func(id string) { chosen = id },
+	}}
+	dst.settle()
+	dst.shot("approval-short-detached")
+	heading := dst.detailBounds(title)
+	input := dst.detailBounds(locales.AgentDraft())
+	stopAfter := dst.detailBounds(locales.AgentStop())
+	if heading.H == 0 || heading.Y+heading.H > input.Y || chat.scroll.Y != 0 || !dst.tt.HasText("Queued question") ||
+		math.Abs(float64(stopAfter.Y-stopBefore.Y)) > 1 || stopAfter.H != stopBefore.H {
+		t.Fatalf("approval dock crowded the composer or displaced the history: heading=%v input=%v stop=%v (was %v) offset=%v", heading, input, stopAfter, stopBefore, chat.scroll.Y)
+	}
+	dst.tt.Scroll(heading.X+heading.W/2, heading.Y+heading.H/2, 0, 300)
+	dst.settle()
+	dst.shot("approval-short-detached-actions")
+	action := dst.detailBounds(label)
+	if action.H == 0 || action.Y+action.H > input.Y || chat.scroll.Y != 0 {
+		t.Fatalf("approval controls did not scroll independently into view: action=%v input=%v offset=%v", action, input, chat.scroll.Y)
+	}
+	if err := dst.tt.Click(label); err != nil {
+		t.Fatal(err)
+	}
+	dst.settle()
+	if chosen != "allow" {
+		t.Fatalf("the detached approval returned %q", chosen)
 	}
 }
 

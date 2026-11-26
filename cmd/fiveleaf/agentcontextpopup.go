@@ -15,6 +15,20 @@ func agentContextCompactionFraction(snapshot agentContextSnapshot) (float32, boo
 	return float32(float64(max(0, min(snapshot.compactAt, snapshot.size))) / float64(snapshot.size)), true
 }
 
+func agentContextCompactionStatusLabel(status agentCompactionStatus) string {
+	switch status {
+	case agentCompactionManaged:
+		return locales.AgentContextCompactionManaged()
+	case agentCompactionRunning:
+		return locales.AgentContextCompactionRunning()
+	case agentCompactionCompleted:
+		return locales.AgentContextCompactionCompleted()
+	case agentCompactionFailed:
+		return locales.AgentContextCompactionFailed()
+	}
+	return ""
+}
+
 func agentContextCategoryLabel(kind string) string {
 	switch kind {
 	case "system":
@@ -147,6 +161,10 @@ func (a *app) agentContextPopup(c *ui.Context, s *agentChat, snapshot agentConte
 				})
 				ui.Box(c).FillWidth().Height(1).Shrink(0).Background(p.border)
 				ui.Column(c.Key("compaction")).FillWidth().MinWidth(0).Gap(m.gap).Children(func() {
+					if status := agentContextCompactionStatusLabel(snapshot.compactionStatus); status != "" {
+						a.agentContextDetailRow(c.Key("status"), locales.AgentContextCompactionStatus(), status, status, p.muted, false, false)
+						return
+					}
 					buffer := locales.AgentContextUnreported()
 					bufferTip := buffer
 					if _, ok := agentContextCompactionFraction(snapshot); ok {

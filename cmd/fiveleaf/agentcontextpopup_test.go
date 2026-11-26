@@ -120,6 +120,56 @@ func TestAgentContextPopupUnknownAndDisabled(t *testing.T) {
 	}
 }
 
+func TestAgentContextPopupCodexCompaction(t *testing.T) {
+	application := &app{}
+	chat := &agentChat{sessionID: "codex-session", generation: 2, turn: 1,
+		connected: &agentProvider{config: settings.AgentServer{Command: "codex-acp"}}}
+	snapshot := application.contextSnapshot(chat)
+	tester, _ := agentContextPopupTester(true, 360, 680, &snapshot)
+	check := func(label string) {
+		t.Helper()
+		snapshot = application.contextSnapshot(chat)
+		step(tester)
+		for _, text := range []string{locales.AgentContextCompactionStatus(), label, locales.AgentContextCompactionUnavailable()} {
+			if !tester.HasText(text) {
+				t.Errorf("context details lost %q", text)
+			}
+		}
+		if _, threshold := agentContextCompactionFraction(snapshot); threshold || tester.HasText(locales.AgentContextCompactionDisabled()) {
+			t.Fatal("Codex reported no compaction threshold or disabled status")
+		}
+	}
+	check(locales.AgentContextCompactionManaged())
+	chat.acceptContextUsage(acp.UsageState{Used: 230000, Size: 272000})
+	chat.busy = true
+	tool := &agentTool{sessionID: chat.sessionID, generation: chat.generation, turn: chat.turn,
+		kind: "think", title: "Compact conversation", status: "in_progress"}
+	chat.tools = []*agentTool{tool}
+	check(locales.AgentContextCompactionRunning())
+	chat.turn++
+	check(locales.AgentContextCompactionManaged())
+	chat.turn--
+	tool.status = "failed"
+	check(locales.AgentContextCompactionFailed())
+	tool.status, chat.busy = "completed", false
+	chat.acceptContextUsage(acp.UsageState{Used: 22000, Size: 272000})
+	check(locales.AgentContextCompactionCompleted())
+	if !tester.HasText("22,000") {
+		t.Fatal("the usage panel did not show the backend's occupancy after compaction")
+	}
+	tool.generation--
+	check(locales.AgentContextCompactionManaged())
+	tool.generation++
+	chat.sessionID = "new-codex-session"
+	check(locales.AgentContextCompactionManaged())
+	chat.sessionID, chat.connected.config.Command = tool.sessionID, "other-acp"
+	snapshot = application.contextSnapshot(chat)
+	step(tester)
+	if tester.HasText(locales.AgentContextCompactionStatus()) {
+		t.Fatal("another provider inherited Codex's compaction status")
+	}
+}
+
 func TestAgentContextPopupUsageAndReserveStayDistinct(t *testing.T) {
 	hs := newHarness(t, true)
 	agentViewFixture(hs)

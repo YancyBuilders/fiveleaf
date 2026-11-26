@@ -19392,6 +19392,16 @@ func (msgs Messages) AgentReconnect() string {
 	return Catalog.Format(msgs.locale, "agentReconnect", nil)
 }
 
+// AgentContinueNewThread says "Continue in a new thread"
+// in the language the app shows.
+func AgentContinueNewThread() string { return In(i18n.Locale()).AgentContinueNewThread() }
+
+// AgentContinueNewThread says "Continue in a new thread"
+// in the language of msgs.
+func (msgs Messages) AgentContinueNewThread() string {
+	return Catalog.Format(msgs.locale, "agentContinueNewThread", nil)
+}
+
 // AgentConnecting says "Connecting…"
 // in the language the app shows.
 func AgentConnecting() string { return In(i18n.Locale()).AgentConnecting() }
@@ -19440,6 +19450,86 @@ func AgentSend() string { return In(i18n.Locale()).AgentSend() }
 // in the language of msgs.
 func (msgs Messages) AgentSend() string {
 	return Catalog.Format(msgs.locale, "agentSend", nil)
+}
+
+// AgentQueueFollowUp says "Queue follow-up"
+// in the language the app shows.
+func AgentQueueFollowUp() string { return In(i18n.Locale()).AgentQueueFollowUp() }
+
+// AgentQueueFollowUp says "Queue follow-up"
+// in the language of msgs.
+func (msgs Messages) AgentQueueFollowUp() string {
+	return Catalog.Format(msgs.locale, "agentQueueFollowUp", nil)
+}
+
+// AgentQueuedFollowUp says "Send after this reply"
+// in the language the app shows.
+func AgentQueuedFollowUp() string { return In(i18n.Locale()).AgentQueuedFollowUp() }
+
+// AgentQueuedFollowUp says "Send after this reply"
+// in the language of msgs.
+func (msgs Messages) AgentQueuedFollowUp() string {
+	return Catalog.Format(msgs.locale, "agentQueuedFollowUp", nil)
+}
+
+// AgentQueuePaused says "Queue paused"
+// in the language the app shows.
+func AgentQueuePaused() string { return In(i18n.Locale()).AgentQueuePaused() }
+
+// AgentQueuePaused says "Queue paused"
+// in the language of msgs.
+func (msgs Messages) AgentQueuePaused() string {
+	return Catalog.Format(msgs.locale, "agentQueuePaused", nil)
+}
+
+// AgentQueueEdit says "Edit queued message"
+// in the language the app shows.
+func AgentQueueEdit() string { return In(i18n.Locale()).AgentQueueEdit() }
+
+// AgentQueueEdit says "Edit queued message"
+// in the language of msgs.
+func (msgs Messages) AgentQueueEdit() string {
+	return Catalog.Format(msgs.locale, "agentQueueEdit", nil)
+}
+
+// AgentQueueRemove says "Remove queued message"
+// in the language the app shows.
+func AgentQueueRemove() string { return In(i18n.Locale()).AgentQueueRemove() }
+
+// AgentQueueRemove says "Remove queued message"
+// in the language of msgs.
+func (msgs Messages) AgentQueueRemove() string {
+	return Catalog.Format(msgs.locale, "agentQueueRemove", nil)
+}
+
+// AgentPasteText says "{lines, plural, one {Pasted text · # line} other {Pasted text · # lines}}"
+// in the language the app shows.
+func AgentPasteText(lines int) string { return In(i18n.Locale()).AgentPasteText(lines) }
+
+// AgentPasteText says "{lines, plural, one {Pasted text · # line} other {Pasted text · # lines}}"
+// in the language of msgs.
+func (msgs Messages) AgentPasteText(lines int) string {
+	return Catalog.Format(msgs.locale, "agentPasteText", map[string]any{"lines": lines})
+}
+
+// AgentPasteEdit says "Edit pasted text in input"
+// in the language the app shows.
+func AgentPasteEdit() string { return In(i18n.Locale()).AgentPasteEdit() }
+
+// AgentPasteEdit says "Edit pasted text in input"
+// in the language of msgs.
+func (msgs Messages) AgentPasteEdit() string {
+	return Catalog.Format(msgs.locale, "agentPasteEdit", nil)
+}
+
+// AgentPasteRemove says "Remove pasted text"
+// in the language the app shows.
+func AgentPasteRemove() string { return In(i18n.Locale()).AgentPasteRemove() }
+
+// AgentPasteRemove says "Remove pasted text"
+// in the language of msgs.
+func (msgs Messages) AgentPasteRemove() string {
+	return Catalog.Format(msgs.locale, "agentPasteRemove", nil)
 }
 
 // AgentDraft says "Message to Agent"
@@ -19852,14 +19942,24 @@ func (msgs Messages) AgentContextUsage(used string, size string) string {
 	return Catalog.Format(msgs.locale, "agentContextUsage", map[string]any{"used": used, "size": size})
 }
 
-// AgentContextUsageHint says "Reported context usage; updates when the agent sends new usage data."
+// AgentContextUsageHint says "Reported context usage; updates when the agent sends new usage data. System prompts, skills and tool definitions coun…"
 // in the language the app shows.
 func AgentContextUsageHint() string { return In(i18n.Locale()).AgentContextUsageHint() }
 
-// AgentContextUsageHint says "Reported context usage; updates when the agent sends new usage data."
+// AgentContextUsageHint says "Reported context usage; updates when the agent sends new usage data. System prompts, skills and tool definitions coun…"
 // in the language of msgs.
 func (msgs Messages) AgentContextUsageHint() string {
 	return Catalog.Format(msgs.locale, "agentContextUsageHint", nil)
+}
+
+// AgentContextCodexUsageHint says "For Codex, this is the most recent request's input context, without generated output."
+// in the language the app shows.
+func AgentContextCodexUsageHint() string { return In(i18n.Locale()).AgentContextCodexUsageHint() }
+
+// AgentContextCodexUsageHint says "For Codex, this is the most recent request's input context, without generated output."
+// in the language of msgs.
+func (msgs Messages) AgentContextCodexUsageHint() string {
+	return Catalog.Format(msgs.locale, "agentContextCodexUsageHint", nil)
 }
 
 // AgentAuthenticate says "Sign In"
@@ -19992,14 +20092,104 @@ func (msgs Messages) AgentViewChat() string {
 	return Catalog.Format(msgs.locale, "agentViewChat", nil)
 }
 
-// AgentThought says "Thinking"
+// AgentThought says "Reasoning details"
 // in the language the app shows.
 func AgentThought() string { return In(i18n.Locale()).AgentThought() }
 
-// AgentThought says "Thinking"
+// AgentThought says "Reasoning details"
 // in the language of msgs.
 func (msgs Messages) AgentThought() string {
 	return Catalog.Format(msgs.locale, "agentThought", nil)
+}
+
+// AgentReviewReasoning says "View reasoning"
+// in the language the app shows.
+func AgentReviewReasoning() string { return In(i18n.Locale()).AgentReviewReasoning() }
+
+// AgentReviewReasoning says "View reasoning"
+// in the language of msgs.
+func (msgs Messages) AgentReviewReasoning() string {
+	return Catalog.Format(msgs.locale, "agentReviewReasoning", nil)
+}
+
+// AgentReplyProgress says "Progress update"
+// in the language the app shows.
+func AgentReplyProgress() string { return In(i18n.Locale()).AgentReplyProgress() }
+
+// AgentReplyProgress says "Progress update"
+// in the language of msgs.
+func (msgs Messages) AgentReplyProgress() string {
+	return Catalog.Format(msgs.locale, "agentReplyProgress", nil)
+}
+
+// AgentFinalReply says "Final reply"
+// in the language the app shows.
+func AgentFinalReply() string { return In(i18n.Locale()).AgentFinalReply() }
+
+// AgentFinalReply says "Final reply"
+// in the language of msgs.
+func (msgs Messages) AgentFinalReply() string {
+	return Catalog.Format(msgs.locale, "agentFinalReply", nil)
+}
+
+// AgentToolCalls says "Tool calls"
+// in the language the app shows.
+func AgentToolCalls() string { return In(i18n.Locale()).AgentToolCalls() }
+
+// AgentToolCalls says "Tool calls"
+// in the language of msgs.
+func (msgs Messages) AgentToolCalls() string {
+	return Catalog.Format(msgs.locale, "agentToolCalls", nil)
+}
+
+// AgentToolCallsCount says "{n, plural, one {# call} other {# calls}}"
+// in the language the app shows.
+func AgentToolCallsCount(n int) string { return In(i18n.Locale()).AgentToolCallsCount(n) }
+
+// AgentToolCallsCount says "{n, plural, one {# call} other {# calls}}"
+// in the language of msgs.
+func (msgs Messages) AgentToolCallsCount(n int) string {
+	return Catalog.Format(msgs.locale, "agentToolCallsCount", map[string]any{"n": n})
+}
+
+// AgentToolInput says "Input"
+// in the language the app shows.
+func AgentToolInput() string { return In(i18n.Locale()).AgentToolInput() }
+
+// AgentToolInput says "Input"
+// in the language of msgs.
+func (msgs Messages) AgentToolInput() string {
+	return Catalog.Format(msgs.locale, "agentToolInput", nil)
+}
+
+// AgentToolOutput says "Output"
+// in the language the app shows.
+func AgentToolOutput() string { return In(i18n.Locale()).AgentToolOutput() }
+
+// AgentToolOutput says "Output"
+// in the language of msgs.
+func (msgs Messages) AgentToolOutput() string {
+	return Catalog.Format(msgs.locale, "agentToolOutput", nil)
+}
+
+// AgentToolNoDetails says "The adapter provided no details for this call."
+// in the language the app shows.
+func AgentToolNoDetails() string { return In(i18n.Locale()).AgentToolNoDetails() }
+
+// AgentToolNoDetails says "The adapter provided no details for this call."
+// in the language of msgs.
+func (msgs Messages) AgentToolNoDetails() string {
+	return Catalog.Format(msgs.locale, "agentToolNoDetails", nil)
+}
+
+// AgentToolWaitingDetails says "Waiting for tool details…"
+// in the language the app shows.
+func AgentToolWaitingDetails() string { return In(i18n.Locale()).AgentToolWaitingDetails() }
+
+// AgentToolWaitingDetails says "Waiting for tool details…"
+// in the language of msgs.
+func (msgs Messages) AgentToolWaitingDetails() string {
+	return Catalog.Format(msgs.locale, "agentToolWaitingDetails", nil)
 }
 
 // AgentChatDetails says "Conversation details"
@@ -20222,6 +20412,120 @@ func AgentDisconnected() string { return In(i18n.Locale()).AgentDisconnected() }
 // in the language of msgs.
 func (msgs Messages) AgentDisconnected() string {
 	return Catalog.Format(msgs.locale, "agentDisconnected", nil)
+}
+
+// AgentSessionInUse says "This Codex thread is open in another Codex client. Close it there, or continue here in a new thread."
+// in the language the app shows.
+func AgentSessionInUse() string { return In(i18n.Locale()).AgentSessionInUse() }
+
+// AgentSessionInUse says "This Codex thread is open in another Codex client. Close it there, or continue here in a new thread."
+// in the language of msgs.
+func (msgs Messages) AgentSessionInUse() string {
+	return Catalog.Format(msgs.locale, "agentSessionInUse", nil)
+}
+
+// AgentConnectionTimeout says "Connecting to the agent timed out. Reconnect to try again."
+// in the language the app shows.
+func AgentConnectionTimeout() string { return In(i18n.Locale()).AgentConnectionTimeout() }
+
+// AgentConnectionTimeout says "Connecting to the agent timed out. Reconnect to try again."
+// in the language of msgs.
+func (msgs Messages) AgentConnectionTimeout() string {
+	return Catalog.Format(msgs.locale, "agentConnectionTimeout", nil)
+}
+
+// AgentSetupTimeout says "Preparing the conversation timed out. Try sending the message again."
+// in the language the app shows.
+func AgentSetupTimeout() string { return In(i18n.Locale()).AgentSetupTimeout() }
+
+// AgentSetupTimeout says "Preparing the conversation timed out. Try sending the message again."
+// in the language of msgs.
+func (msgs Messages) AgentSetupTimeout() string {
+	return Catalog.Format(msgs.locale, "agentSetupTimeout", nil)
+}
+
+// AgentReplyIdleTimeout says "The agent stopped responding for {seconds, plural, one {# second} other {# seconds}}."
+// in the language the app shows.
+func AgentReplyIdleTimeout(seconds int) string {
+	return In(i18n.Locale()).AgentReplyIdleTimeout(seconds)
+}
+
+// AgentReplyIdleTimeout says "The agent stopped responding for {seconds, plural, one {# second} other {# seconds}}."
+// in the language of msgs.
+func (msgs Messages) AgentReplyIdleTimeout(seconds int) string {
+	return Catalog.Format(msgs.locale, "agentReplyIdleTimeout", map[string]any{"seconds": seconds})
+}
+
+// AgentTurnIncomplete says "The agent ended the turn before finishing."
+// in the language the app shows.
+func AgentTurnIncomplete() string { return In(i18n.Locale()).AgentTurnIncomplete() }
+
+// AgentTurnIncomplete says "The agent ended the turn before finishing."
+// in the language of msgs.
+func (msgs Messages) AgentTurnIncomplete() string {
+	return Catalog.Format(msgs.locale, "agentTurnIncomplete", nil)
+}
+
+// AgentEmptyReply says "The agent finished this turn without a reply or tool result."
+// in the language the app shows.
+func AgentEmptyReply() string { return In(i18n.Locale()).AgentEmptyReply() }
+
+// AgentEmptyReply says "The agent finished this turn without a reply or tool result."
+// in the language of msgs.
+func (msgs Messages) AgentEmptyReply() string {
+	return Catalog.Format(msgs.locale, "agentEmptyReply", nil)
+}
+
+// AgentReplyTokenLimit says "The agent reached its output token limit."
+// in the language the app shows.
+func AgentReplyTokenLimit() string { return In(i18n.Locale()).AgentReplyTokenLimit() }
+
+// AgentReplyTokenLimit says "The agent reached its output token limit."
+// in the language of msgs.
+func (msgs Messages) AgentReplyTokenLimit() string {
+	return Catalog.Format(msgs.locale, "agentReplyTokenLimit", nil)
+}
+
+// AgentReplyRequestLimit says "The agent reached its request limit for this turn."
+// in the language the app shows.
+func AgentReplyRequestLimit() string { return In(i18n.Locale()).AgentReplyRequestLimit() }
+
+// AgentReplyRequestLimit says "The agent reached its request limit for this turn."
+// in the language of msgs.
+func (msgs Messages) AgentReplyRequestLimit() string {
+	return Catalog.Format(msgs.locale, "agentReplyRequestLimit", nil)
+}
+
+// AgentReplyDeclined says "The agent declined this request."
+// in the language the app shows.
+func AgentReplyDeclined() string { return In(i18n.Locale()).AgentReplyDeclined() }
+
+// AgentReplyDeclined says "The agent declined this request."
+// in the language of msgs.
+func (msgs Messages) AgentReplyDeclined() string {
+	return Catalog.Format(msgs.locale, "agentReplyDeclined", nil)
+}
+
+// AgentRestoreFailedDraft says "Restore to input"
+// in the language the app shows.
+func AgentRestoreFailedDraft() string { return In(i18n.Locale()).AgentRestoreFailedDraft() }
+
+// AgentRestoreFailedDraft says "Restore to input"
+// in the language of msgs.
+func (msgs Messages) AgentRestoreFailedDraft() string {
+	return Catalog.Format(msgs.locale, "agentRestoreFailedDraft", nil)
+}
+
+// AgentRestoreFailedDraftHasDraft says "Clear or send your current draft first."
+// in the language the app shows.
+func AgentRestoreFailedDraftHasDraft() string {
+	return In(i18n.Locale()).AgentRestoreFailedDraftHasDraft()
+}
+
+// AgentRestoreFailedDraftHasDraft says "Clear or send your current draft first."
+// in the language of msgs.
+func (msgs Messages) AgentRestoreFailedDraftHasDraft() string {
+	return Catalog.Format(msgs.locale, "agentRestoreFailedDraftHasDraft", nil)
 }
 
 // AgentContextTooLarge says "Context exceeds 2 MiB. Select a smaller excerpt."
@@ -20888,11 +21192,11 @@ func (msgs Messages) AgentSystemPrompt() string {
 	return Catalog.Format(msgs.locale, "agentSystemPrompt", nil)
 }
 
-// AgentContextMessages says "Recent messages"
+// AgentContextMessages says "Recent messages to replay"
 // in the language the app shows.
 func AgentContextMessages() string { return In(i18n.Locale()).AgentContextMessages() }
 
-// AgentContextMessages says "Recent messages"
+// AgentContextMessages says "Recent messages to replay"
 // in the language of msgs.
 func (msgs Messages) AgentContextMessages() string {
 	return Catalog.Format(msgs.locale, "agentContextMessages", nil)
@@ -21636,21 +21940,21 @@ func (msgs Messages) PrefsAgentCapabilitiesPlaceholder() string {
 	return Catalog.Format(msgs.locale, "prefsAgentCapabilitiesPlaceholder", nil)
 }
 
-// PrefsAgentTimeout says "Reply timeout (seconds)"
+// PrefsAgentTimeout says "Reply timeout (seconds, 0 for default)"
 // in the language the app shows.
 func PrefsAgentTimeout() string { return In(i18n.Locale()).PrefsAgentTimeout() }
 
-// PrefsAgentTimeout says "Reply timeout (seconds)"
+// PrefsAgentTimeout says "Reply timeout (seconds, 0 for default)"
 // in the language of msgs.
 func (msgs Messages) PrefsAgentTimeout() string {
 	return Catalog.Format(msgs.locale, "prefsAgentTimeout", nil)
 }
 
-// PrefsAgentTimeoutInvalid says "Enter a whole number from 1 to 3600."
+// PrefsAgentTimeoutInvalid says "Enter a whole number from 0 to 3600."
 // in the language the app shows.
 func PrefsAgentTimeoutInvalid() string { return In(i18n.Locale()).PrefsAgentTimeoutInvalid() }
 
-// PrefsAgentTimeoutInvalid says "Enter a whole number from 1 to 3600."
+// PrefsAgentTimeoutInvalid says "Enter a whole number from 0 to 3600."
 // in the language of msgs.
 func (msgs Messages) PrefsAgentTimeoutInvalid() string {
 	return Catalog.Format(msgs.locale, "prefsAgentTimeoutInvalid", nil)
@@ -22502,6 +22806,58 @@ func AgentContextCompactionUnavailable() string {
 // in the language of msgs.
 func (msgs Messages) AgentContextCompactionUnavailable() string {
 	return Catalog.Format(msgs.locale, "agentContextCompactionUnavailable", nil)
+}
+
+// AgentContextCompactionStatus says "Context compaction"
+// in the language the app shows.
+func AgentContextCompactionStatus() string { return In(i18n.Locale()).AgentContextCompactionStatus() }
+
+// AgentContextCompactionStatus says "Context compaction"
+// in the language of msgs.
+func (msgs Messages) AgentContextCompactionStatus() string {
+	return Catalog.Format(msgs.locale, "agentContextCompactionStatus", nil)
+}
+
+// AgentContextCompactionManaged says "Managed by Codex"
+// in the language the app shows.
+func AgentContextCompactionManaged() string { return In(i18n.Locale()).AgentContextCompactionManaged() }
+
+// AgentContextCompactionManaged says "Managed by Codex"
+// in the language of msgs.
+func (msgs Messages) AgentContextCompactionManaged() string {
+	return Catalog.Format(msgs.locale, "agentContextCompactionManaged", nil)
+}
+
+// AgentContextCompactionRunning says "Compacting…"
+// in the language the app shows.
+func AgentContextCompactionRunning() string { return In(i18n.Locale()).AgentContextCompactionRunning() }
+
+// AgentContextCompactionRunning says "Compacting…"
+// in the language of msgs.
+func (msgs Messages) AgentContextCompactionRunning() string {
+	return Catalog.Format(msgs.locale, "agentContextCompactionRunning", nil)
+}
+
+// AgentContextCompactionCompleted says "Compacted"
+// in the language the app shows.
+func AgentContextCompactionCompleted() string {
+	return In(i18n.Locale()).AgentContextCompactionCompleted()
+}
+
+// AgentContextCompactionCompleted says "Compacted"
+// in the language of msgs.
+func (msgs Messages) AgentContextCompactionCompleted() string {
+	return Catalog.Format(msgs.locale, "agentContextCompactionCompleted", nil)
+}
+
+// AgentContextCompactionFailed says "Compaction failed"
+// in the language the app shows.
+func AgentContextCompactionFailed() string { return In(i18n.Locale()).AgentContextCompactionFailed() }
+
+// AgentContextCompactionFailed says "Compaction failed"
+// in the language of msgs.
+func (msgs Messages) AgentContextCompactionFailed() string {
+	return Catalog.Format(msgs.locale, "agentContextCompactionFailed", nil)
 }
 
 // AgentContextCompactionHint says "The marker follows the Pi configuration loaded for the current session."

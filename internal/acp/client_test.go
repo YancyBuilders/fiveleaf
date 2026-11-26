@@ -2,10 +2,12 @@ package acp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +26,7 @@ type testHandler struct {
 	writePath  string
 	written    string
 	permission func(context.Context, PermissionRequest) (PermissionOutcome, error)
+	write      func(context.Context, WriteRequest) error
 }
 
 func (h *testHandler) Update(p Update) {
@@ -49,7 +52,10 @@ func (h *testHandler) ReadTextFile(_ context.Context, p ReadRequest) (string, er
 	return "unsaved first\nunsaved second\nunsaved third", nil
 }
 
-func (h *testHandler) WriteTextFile(_ context.Context, p WriteRequest) error {
+func (h *testHandler) WriteTextFile(ctx context.Context, p WriteRequest) error {
+	if h.write != nil {
+		return h.write(ctx, p)
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.writePath, h.written = p.Path, p.Content
@@ -121,6 +127,80 @@ func TestACPStdioConversation(t *testing.T) {
 	}
 	if h.readPath != filepath.Join(c.root, "test.go") || h.writePath != filepath.Join(c.root, "empty.go") || h.written != "" {
 		t.Fatalf("callbacks: read=%q write=%q content=%q", h.readPath, h.writePath, h.written)
+	}
+}
+
+func TestACPReattachSession(t *testing.T) {
+	for _, test := range []struct {
+		name, wantID, wantError string
+	}{
+		{name: "resume", wantID: "previous-session"},
+		{name: "unsupported", wantID: "session-1"},
+		{name: "load", wantID: "previous-session"},
+		{name: "both-missing", wantID: "session-1"},
+		{name: "missing", wantID: "session-1"},
+		{name: "codex-missing", wantID: "session-1"},
+		{name: "different-adapter", wantError: "no rollout found for thread id previous-session"},
+		{name: "wrong-session", wantError: "missing different session"},
+		{name: "auth", wantError: "Sign in using the agent's CLI"},
+		{name: "writer", wantError: "thread_active_writer"},
+		{name: "config", wantError: "invalid workspace configuration"},
+		{name: "unrelated-method", wantError: "nested_method"},
+		{name: "transport", wantError: "disconnected during session/resume"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := &testHandler{}
+			client, ctx := startTestClient(t, "reattach-"+test.name, handler)
+			if _, err := client.Initialize(ctx); err != nil {
+				t.Fatal(err)
+			}
+			session, err := client.ReattachSession(ctx, "previous-session")
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantError) || session.SessionId != "" {
+					t.Fatalf("reattach hid the original error: session=%+v error=%v", session, err)
+				}
+				return
+			}
+			if err != nil || string(session.SessionId) != test.wantID || session.Restored != (test.wantID == "previous-session") || len(session.Replay) != 0 {
+				t.Fatalf("reattach = %+v, %v; want %q without replay", session, err, test.wantID)
+			}
+			if test.name == "load" {
+				handler.mu.Lock()
+				defer handler.mu.Unlock()
+				if len(handler.updates) != 0 {
+					t.Fatalf("load fallback forwarded duplicate history: %+v", handler.updates)
+				}
+			}
+		})
+	}
+}
+
+func TestACPReattachRefusesSessionOwnedByLiveClient(t *testing.T) {
+	first, ctx := startTestClient(t, "reattach-resume", &testHandler{})
+	if _, err := first.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	session, err := first.ReattachSession(ctx, "previous-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, secondCtx := startTestClient(t, "reattach-resume", &testHandler{})
+	if _, err := second.Initialize(secondCtx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := second.ReattachSession(secondCtx, string(session.SessionId)); !errors.Is(err, ErrSessionInUse) {
+		t.Fatalf("second client claimed the live session: %v", err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-first.Done():
+	case <-ctx.Done():
+		t.Fatal("first client did not release its session")
+	}
+	if _, err := second.ReattachSession(secondCtx, string(session.SessionId)); errors.Is(err, ErrSessionInUse) {
+		t.Fatalf("a retired owner still blocked the session: %v", err)
 	}
 }
 
@@ -235,6 +315,312 @@ func TestACPPromptContextCancellation(t *testing.T) {
 	}
 	if _, err := c.Prompt(ctx, sessionID, []ContentBlock{TextBlock("again")}); err == nil || !strings.Contains(err.Error(), "acknowledgement") {
 		t.Fatalf("unacknowledged turn was reused: %v", err)
+	}
+}
+
+func TestACPPromptWithStopPreservesSession(t *testing.T) {
+	permissionReady, permissionCanceled := make(chan struct{}), make(chan struct{})
+	h := &testHandler{permission: func(ctx context.Context, _ PermissionRequest) (PermissionOutcome, error) {
+		close(permissionReady)
+		<-ctx.Done()
+		close(permissionCanceled)
+		return CancelledPermission(), nil
+	}}
+	c, ctx := startTestClient(t, "cooperative-stop", h)
+	sessionID := readyTestSession(t, c, ctx)
+	stopCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	type outcome struct {
+		result PromptResult
+		sent   bool
+		err    error
+	}
+	finished := make(chan outcome, 1)
+	go func() {
+		result, sent, err := c.PromptWithStop(stopCtx, sessionID, []ContentBlock{TextBlock("wait")}, 0, nil)
+		finished <- outcome{result, sent, err}
+	}()
+	select {
+	case <-permissionReady:
+	case <-ctx.Done():
+		t.Fatal("the process did not receive the first prompt")
+	}
+	stop()
+	select {
+	case <-permissionCanceled:
+	case <-ctx.Done():
+		t.Fatal("Stop did not cancel the pending permission")
+	}
+	if _, sent, err := c.PromptWithStop(ctx, sessionID, []ContentBlock{TextBlock("too early")}, 0, nil); sent || err == nil || !strings.Contains(err.Error(), "already responding") {
+		t.Fatalf("started a second prompt before the original reply: sent=%v, err=%v", sent, err)
+	}
+	if err := os.WriteFile(filepath.Join(c.root, "cancel-ack"), []byte("allow reply"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-finished:
+		if got.err != nil || !got.sent || got.result.StopReason != "cancelled" {
+			t.Fatalf("acknowledged Stop = %+v", got)
+		}
+	case <-ctx.Done():
+		t.Fatalf("Stop did not finish after the original prompt response: %s", c.Stderr())
+	}
+	result, sent, err := c.PromptWithStop(ctx, sessionID, []ContentBlock{TextBlock("again")}, 0, nil)
+	if err != nil || !sent || result.StopReason != "end_turn" {
+		t.Fatalf("next prompt = %+v, sent=%v, err=%v", result, sent, err)
+	}
+}
+
+func TestACPPromptWithStopSkipsCanceledSendAndKeepsRPCRejection(t *testing.T) {
+	c, ctx := startTestClient(t, "cooperative-stop", &testHandler{})
+	sessionID := readyTestSession(t, c, ctx)
+	stopCtx, stop := context.WithCancel(ctx)
+	stop()
+	if _, sent, err := c.PromptWithStop(stopCtx, sessionID, []ContentBlock{TextBlock("must not reach peer")}, 0, nil); sent || !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-canceled prompt: sent=%v, err=%v", sent, err)
+	}
+	if _, sent, err := c.PromptWithStop(ctx, sessionID, []ContentBlock{TextBlock("reject")}, 0, nil); !sent || err == nil || !strings.Contains(err.Error(), "rejected by fixture") {
+		t.Fatalf("RPC rejection: sent=%v, err=%v", sent, err)
+	}
+	result, sent, err := c.PromptWithStop(ctx, sessionID, []ContentBlock{TextBlock("again")}, 0, nil)
+	if err != nil || !sent || result.StopReason != "end_turn" {
+		t.Fatalf("prompt after rejection = %+v, sent=%v, err=%v, peer=%s", result, sent, err, c.Stderr())
+	}
+}
+
+func TestACPPromptWithStopCancelsPendingEditorWrite(t *testing.T) {
+	writeReady := make(chan struct{}, 1)
+	handler := &testHandler{write: func(ctx context.Context, _ WriteRequest) error {
+		writeReady <- struct{}{}
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	client, ctx := startTestClient(t, "cooperative-stop", handler)
+	sessionID := readyTestSession(t, client, ctx)
+	stopCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	finished := make(chan error, 1)
+	go func() {
+		result, sent, err := client.PromptWithStop(stopCtx, sessionID, []ContentBlock{TextBlock("write")}, 0, nil)
+		if err != nil || !sent || result.StopReason != "cancelled" {
+			finished <- fmt.Errorf("Stop = %+v, sent=%v, err=%v", result, sent, err)
+			return
+		}
+		finished <- nil
+	}()
+	select {
+	case <-writeReady:
+	case <-ctx.Done():
+		t.Fatal("the agent's file write did not reach the handler")
+	}
+	stop()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("the agent never got a cancellation response for the write")
+	}
+	if result, sent, err := client.PromptWithStop(ctx, sessionID, []ContentBlock{TextBlock("again")}, 0, nil); err != nil || !sent || result.StopReason != "end_turn" {
+		t.Fatalf("prompt after canceling a write = %+v, sent=%v, err=%v", result, sent, err)
+	}
+}
+
+func TestACPPromptWithStopAcknowledgesIdleTimeout(t *testing.T) {
+	for _, test := range []struct {
+		prompt, stopReason string
+		err                error
+	}{
+		{prompt: "idle", stopReason: "cancelled", err: context.DeadlineExceeded},
+		{prompt: "idle-completes", stopReason: "end_turn"},
+	} {
+		t.Run(test.prompt, func(t *testing.T) {
+			client, ctx := startTestClient(t, "cooperative-stop", &testHandler{})
+			sessionID := readyTestSession(t, client, ctx)
+			var events []string
+			result, sent, err := client.PromptWithStop(ctx, sessionID, []ContentBlock{TextBlock(test.prompt)}, 200*time.Millisecond, &PromptEvents{
+				Written: func() { events = append(events, "written") },
+				Idle:    func() { events = append(events, "idle") },
+			})
+			if !sent || !errors.Is(err, test.err) || string(result.StopReason) != test.stopReason {
+				t.Fatalf("idle stop = %+v, sent=%v, err=%v", result, sent, err)
+			}
+			if got := strings.Join(events, ","); got != "written,idle" {
+				t.Fatalf("callbacks received before the prompt returned = %q, want written,idle", got)
+			}
+			result, sent, err = client.PromptWithStop(ctx, sessionID, []ContentBlock{TextBlock("again")}, 0, nil)
+			if err != nil || !sent || result.StopReason != "end_turn" {
+				t.Fatalf("prompt after idle stop = %+v, sent=%v, err=%v", result, sent, err)
+			}
+		})
+	}
+}
+
+func TestACPPromptWithStopKeepsAdapterUntilReplyOrClose(t *testing.T) {
+	for _, test := range []struct {
+		prompt string
+		close  bool
+	}{
+		{prompt: "delayed-ack"},
+		{prompt: "stall", close: true},
+	} {
+		t.Run(test.prompt, func(t *testing.T) {
+			client, ctx := startTestClient(t, "cooperative-stop", &testHandler{})
+			sessionID := readyTestSession(t, client, ctx)
+			idle := make(chan struct{})
+			type outcome struct {
+				result PromptResult
+				sent   bool
+				err    error
+			}
+			finished := make(chan outcome, 1)
+			go func() {
+				result, sent, err := client.PromptWithStop(ctx, sessionID, []ContentBlock{TextBlock(test.prompt)}, 100*time.Millisecond, &PromptEvents{Idle: func() { close(idle) }})
+				finished <- outcome{result, sent, err}
+			}()
+			select {
+			case <-idle:
+			case <-ctx.Done():
+				t.Fatal("the idle callback did not run while the prompt was still pending")
+			}
+			if _, sent, err := client.PromptWithStop(ctx, sessionID, []ContentBlock{TextBlock("too early")}, 0, nil); sent || err == nil || !strings.Contains(err.Error(), "already responding") {
+				t.Fatalf("another prompt started during the pending cancellation: sent=%v, err=%v", sent, err)
+			}
+			if test.close {
+				if err := client.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				timer := time.NewTimer(6*time.Second + 200*time.Millisecond)
+				defer timer.Stop()
+				select {
+				case <-client.Done():
+					t.Fatalf("the pending cancellation stopped the adapter: %v", client.Err())
+				case got := <-finished:
+					t.Fatalf("prompt returned before the delayed reply: %+v", got)
+				case <-timer.C:
+				}
+			}
+			select {
+			case got := <-finished:
+				if test.close {
+					if !got.sent || !errors.Is(got.err, ErrClosed) {
+						t.Fatalf("closed prompt requires a transport error: %+v", got)
+					}
+					return
+				}
+				if !got.sent || !errors.Is(got.err, context.DeadlineExceeded) || got.result.StopReason != "cancelled" {
+					t.Fatalf("delayed reply = %+v", got)
+				}
+			case <-ctx.Done():
+				t.Fatal("the pending prompt did not settle")
+			}
+			if result, sent, err := client.PromptWithStop(ctx, sessionID, []ContentBlock{TextBlock("again")}, 0, nil); err != nil || !sent || result.StopReason != "end_turn" {
+				t.Fatalf("prompt on the original process after late reply = %+v, sent=%v, err=%v", result, sent, err)
+			}
+		})
+	}
+}
+
+type gatedPromptWriter struct {
+	entered, release chan struct{}
+	other            chan []byte
+}
+
+func (writer gatedPromptWriter) Write(data []byte) (int, error) {
+	if bytes.Contains(data, []byte(`"method":"_test/gate"`)) {
+		close(writer.entered)
+		<-writer.release
+	} else {
+		writer.other <- bytes.Clone(data)
+	}
+	return len(data), nil
+}
+
+func (writer gatedPromptWriter) Close() error { return nil }
+
+func TestACPPromptWithStopAbortsBeforeQueuedWrite(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	reader, input := io.Pipe()
+	defer input.Close()
+	writer := gatedPromptWriter{entered: make(chan struct{}), release: make(chan struct{}), other: make(chan []byte, 3)}
+	var release sync.Once
+	defer release.Do(func() { close(writer.release) })
+	const sessionID = "session-1"
+	session := &sessionState{}
+	client := &Client{stdin: writer, ctx: ctx, initialized: true, sessions: map[string]*sessionState{sessionID: session}}
+	client.conn = sdk.NewConnection(nil, messageWriter{client}, reader)
+	gateDone := make(chan error, 1)
+	go func() { gateDone <- client.conn.SendNotification(ctx, "_test/gate", nil) }()
+	select {
+	case <-writer.entered:
+	case <-ctx.Done():
+		t.Fatal("the gate did not occupy the SDK write lock")
+	}
+	stopCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	type outcome struct {
+		sent bool
+		err  error
+	}
+	finished := make(chan outcome, 1)
+	writtenCount := 0
+	go func() {
+		_, sent, err := client.PromptWithStop(stopCtx, sessionID, []ContentBlock{TextBlock("must not reach the wire")}, 0, &PromptEvents{Written: func() { writtenCount++ }})
+		finished <- outcome{sent, err}
+	}()
+	for {
+		client.mu.Lock()
+		queued := session.promptStop != nil
+		client.mu.Unlock()
+		if queued {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("the cooperative prompt did not reach the blocked writer")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	stop()
+	release.Do(func() { close(writer.release) })
+	if err := <-gateDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-finished:
+		if got.sent || !errors.Is(got.err, context.Canceled) || writtenCount != 0 {
+			t.Fatalf("canceled queued prompt = %+v; Written ran %d times", got, writtenCount)
+		}
+	case <-ctx.Done():
+		t.Fatal("a canceled prompt waited for an adapter response")
+	}
+	select {
+	case unexpected := <-writer.other:
+		t.Fatalf("a canceled queued prompt still wrote a frame: %q", unexpected)
+	default:
+	}
+}
+
+func TestACPPromptIdleTimeoutPausesForPermission(t *testing.T) {
+	const idle = 400 * time.Millisecond
+	h := &testHandler{permission: func(ctx context.Context, _ PermissionRequest) (PermissionOutcome, error) {
+		timer := time.NewTimer(2 * idle)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return CancelledPermission(), ctx.Err()
+		case <-timer.C:
+			return SelectedPermission("allow"), nil
+		}
+	}}
+	c, ctx := startTestClient(t, "conversation", h)
+	sessionID := readyTestSession(t, c, ctx)
+	result, err := c.PromptWithIdleTimeout(ctx, sessionID, []ContentBlock{TextBlock("wait for permission")}, idle)
+	if err != nil || result.StopReason != "end_turn" {
+		t.Fatalf("permission wait interrupted a reply: %+v, %v", result, err)
 	}
 }
 
@@ -440,6 +826,8 @@ func runTestAgent(scenario string) error {
 		return read()
 	}
 	var root string
+	restore, reattaching := strings.CutPrefix(scenario, "reattach-")
+	resumeTried, loadTried := false, false
 	for {
 		m, err := read()
 		if err != nil {
@@ -465,10 +853,93 @@ func runTestAgent(scenario string) error {
 				reply(m.ID, map[string]any{"protocolVersion": 2, "authMethods": []any{}})
 				continue
 			}
-			reply(m.ID, map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}}, "authMethods": []any{map[string]string{"id": "login", "name": "Log in"}}})
+			capabilities := map[string]any{"promptCapabilities": map[string]bool{"embeddedContext": true}}
+			result := map[string]any{"protocolVersion": 1, "agentCapabilities": capabilities, "authMethods": []any{map[string]string{"id": "login", "name": "Log in"}}}
+			if reattaching && restore != "unsupported" {
+				capabilities["sessionCapabilities"] = map[string]any{"resume": map[string]any{}}
+			}
+			if restore == "load" || restore == "both-missing" {
+				capabilities["loadSession"] = true
+			}
+			if restore == "codex-missing" {
+				result["agentInfo"] = map[string]string{"name": "@agentclientprotocol/codex-acp", "version": "2.7.0"}
+			}
+			reply(m.ID, result)
 		case "authenticate":
 			reply(m.ID, map[string]any{})
+		case "session/resume", "session/load":
+			if !reattaching {
+				return errors.New("unexpected restore")
+			}
+			var params struct {
+				SessionID  string
+				Cwd        string
+				MCPServers json.RawMessage `json:"mcpServers"`
+			}
+			if err := json.Unmarshal(m.Params, &params); err != nil || params.SessionID != "previous-session" || !filepath.IsAbs(params.Cwd) {
+				return errors.New("attempted to restore the wrong session")
+			}
+			if string(params.MCPServers) != "[]" {
+				return fmt.Errorf("%s omitted its empty mcpServers array", m.Method)
+			}
+			if m.Method == "session/load" {
+				if !resumeTried || loadTried {
+					return errors.New("load was not tried once after resume")
+				}
+				loadTried = true
+			} else {
+				if resumeTried {
+					return errors.New("resume was attempted more than once")
+				}
+				resumeTried = true
+			}
+			var rejection *sdk.RequestError
+			switch restore {
+			case "resume":
+			case "load", "both-missing":
+				if m.Method == "session/resume" || restore == "both-missing" {
+					rejection = sdk.NewMethodNotFound(m.Method)
+				} else if err := send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+					"sessionId": params.SessionID, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": "cached history"}},
+				}}); err != nil {
+					return err
+				}
+			case "missing":
+				rejection = &sdk.RequestError{Code: -32002, Message: "missing session", Data: map[string]string{"sessionId": params.SessionID}}
+			case "codex-missing", "different-adapter":
+				rejection = sdk.NewInternalError(map[string]string{"details": "no rollout found for thread id " + params.SessionID})
+			case "wrong-session":
+				rejection = &sdk.RequestError{Code: -32002, Message: "missing different session", Data: map[string]string{"sessionId": "another-session"}}
+			case "auth":
+				rejection = sdk.NewAuthRequired(nil)
+			case "writer":
+				rejection = sdk.NewInvalidRequest(map[string]string{"reason": "thread_active_writer", "threadId": params.SessionID})
+			case "config":
+				rejection = sdk.NewInternalError(map[string]string{"details": "invalid workspace configuration"})
+			case "unrelated-method":
+				rejection = sdk.NewMethodNotFound("nested_method")
+			case "transport":
+				return nil
+			default:
+				return errors.New("restore was not advertised")
+			}
+			if rejection != nil {
+				send(map[string]any{"jsonrpc": "2.0", "id": m.ID, "error": rejection})
+			} else {
+				reply(m.ID, map[string]any{})
+			}
 		case "session/new":
+			if reattaching {
+				switch restore {
+				case "unsupported":
+				case "missing", "codex-missing", "both-missing":
+					if !resumeTried || restore == "both-missing" && !loadTried {
+						return errors.New("started a new session before restore methods settled")
+					}
+				default:
+					return errors.New("unexpectedly fell back to a new session")
+				}
+			}
 			if scenario == "needs-login" {
 				send(map[string]any{"jsonrpc": "2.0", "id": m.ID, "error": sdk.NewAuthRequired("private-account-detail")})
 				continue
@@ -486,7 +957,73 @@ func runTestAgent(scenario string) error {
 			}
 		case "session/set_mode":
 			reply(m.ID, map[string]any{})
+		case "session/cancel":
+			if scenario == "cooperative-stop" {
+				return errors.New("cancel arrived outside its active prompt")
+			}
 		case "session/prompt":
+			if scenario == "cooperative-stop" {
+				var prompt sdk.PromptRequest
+				if err := json.Unmarshal(m.Params, &prompt); err != nil || prompt.SessionId != "session-1" || len(prompt.Prompt) != 1 || prompt.Prompt[0].Text == nil {
+					return errors.New("invalid cooperative prompt")
+				}
+				switch text := prompt.Prompt[0].Text.Text; text {
+				case "again":
+					reply(m.ID, map[string]string{"stopReason": "end_turn"})
+				case "reject":
+					send(map[string]any{"jsonrpc": "2.0", "id": m.ID, "error": &sdk.RequestError{Code: -32602, Message: "rejected by fixture"}})
+				case "wait", "write", "idle", "idle-completes", "delayed-ack", "stall":
+					permissionPending, writePending, cancelSeen := text == "wait", text == "write", false
+					if permissionPending {
+						send(map[string]any{"jsonrpc": "2.0", "id": "stop-permission", "method": "session/request_permission", "params": map[string]any{"sessionId": "session-1", "toolCall": map[string]string{"toolCallId": "stop-test"}, "options": []any{map[string]string{"optionId": "allow", "name": "Allow", "kind": "allow_once"}}}})
+					}
+					if writePending {
+						send(map[string]any{"jsonrpc": "2.0", "id": "stop-write", "method": "fs/write_text_file", "params": map[string]string{"sessionId": "session-1", "path": filepath.Join(root, "staged.txt"), "content": "fixture"}})
+					}
+					for permissionPending || writePending || !cancelSeen {
+						next, err := read()
+						if err != nil {
+							return err
+						}
+						switch {
+						case next.Method == "session/cancel" && !cancelSeen:
+							var cancel sdk.CancelNotification
+							if err := json.Unmarshal(next.Params, &cancel); err != nil || cancel.SessionId != prompt.SessionId {
+								return errors.New("cancel had the wrong session ID")
+							}
+							cancelSeen = true
+						case string(next.ID) == `"stop-permission"` && strings.Contains(string(next.Result), `"cancelled"`):
+							permissionPending = false
+						case string(next.ID) == `"stop-write"` && strings.Contains(string(next.Error), `"code":-32800`):
+							writePending = false
+						default:
+							return fmt.Errorf("unexpected message before prompt stop acknowledgement: %q", next.Method)
+						}
+					}
+					if text == "wait" {
+						for deadline := time.Now().Add(5 * time.Second); ; {
+							if _, err := os.Stat(filepath.Join(root, "cancel-ack")); err == nil {
+								break
+							}
+							if time.Now().After(deadline) {
+								return errors.New("test did not release the cancel acknowledgement")
+							}
+							time.Sleep(time.Millisecond)
+						}
+					}
+					if text == "idle-completes" {
+						reply(m.ID, map[string]string{"stopReason": "end_turn"})
+					} else if text != "stall" {
+						if text == "delayed-ack" {
+							time.Sleep(6*time.Second + 500*time.Millisecond)
+						}
+						reply(m.ID, map[string]string{"stopReason": "cancelled"})
+					}
+				default:
+					return fmt.Errorf("prompt was unexpectedly written: %q", text)
+				}
+				continue
+			}
 			if scenario == "unknown-session" {
 				response, err := request("bad", "fs/read_text_file", map[string]any{"sessionId": "wrong", "path": filepath.Join(root, "test.go")})
 				if err != nil || len(response.Error) == 0 {

@@ -237,7 +237,7 @@ FIVELEAF_DATA_DIR=~/fiveleaf-test /Applications/FiveLeaf.app/Contents/MacOS/Five
 - `workingDirectory` 默认为项目文件夹，相对路径从项目文件夹开始解析。ACP 会话和编辑器的路径仍以项目为准。
 - `capabilities` 默认为 `[]`。`"code"`、`"reasoning"` 和 `"search"` 等标签只用于路由。
 - `disabled` 默认为 `false`。设为 `true` 会停用这个 Agent、断开连接并停止正在进行的工作。
-- `timeoutSeconds` 默认为 `120`，允许 1 到 3600 秒。`0` 表示使用默认值。
+- `timeoutSeconds` 允许 1 到 3600 秒，`0` 表示使用默认设置。ACP 单聊默认持续等待回复。配置后，连续这么多秒没有进展时会请求取消，等待授权时暂停计时。连接准备有独立时限。CLI 和圆桌会议默认超时为 120 秒。
 - `promptArgument` 默认为 `false`。对于 CLI，设为 `true` 时将提示词作为最后一个参数追加到命令，默认通过标准输入传递。
 
 ```json

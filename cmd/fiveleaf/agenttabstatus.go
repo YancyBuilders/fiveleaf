@@ -46,12 +46,17 @@ func (a *app) chatTabStatus(c *ui.Context, chat *agentChat, surface ui.Color) {
 	indicator.Size(size, size).Shrink(0).TextColor(chatBadgeColor(ink, surface)).Label(label).Tooltip(label)
 }
 
-func (a *app) showChatTaskNotices(c *ui.Context) {
+func (a *app) showChatTaskNotices(c *ui.Context, foreground bool) {
 	for _, chat := range a.allAgentChats() {
-		if chat.taskNoticePending == nil {
+		notice := chat.taskNoticePending
+		if notice == nil {
 			continue
 		}
-		c.AddToast(*chat.taskNoticePending)
+		if foreground && a.chatShown(chat) && chat.connected != nil && chat.connected.config.EffectiveProtocol() == "acp" && (notice.Type == "approval" || notice.Type == "progress") {
+			c.CloseToast(notice.ID)
+		} else {
+			c.AddToast(*notice)
+		}
 		chat.taskNoticePending = nil
 	}
 }

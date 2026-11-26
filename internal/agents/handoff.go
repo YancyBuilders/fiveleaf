@@ -21,7 +21,7 @@ const (
 )
 
 type HandoffMessage struct {
-	Role, Text string
+	Role, Text, Phase string
 }
 
 type Handoff struct {
@@ -30,27 +30,31 @@ type Handoff struct {
 }
 
 type handoffEnvelope struct {
-	Type, Role, Channel, Text string
-	ID, ParentID              string
-	Content, Message, Payload json.RawMessage
-	Messages                  []json.RawMessage
-	IsMeta, IsSidechain       bool
+	Type, Role, Channel, Text, Phase string
+	ID, ParentID                     string
+	Content, Message, Payload        json.RawMessage
+	Messages                         []json.RawMessage
+	IsMeta, IsSidechain              bool
 }
 
 type handoffEntry struct {
 	HandoffMessage
-	origin  byte
-	digest  [32]byte
-	id      string
-	dropped bool
+	origin           byte
+	digest           [32]byte
+	id               string
+	dropped          bool
+	firstCodexPrompt bool
 }
 
 type handoffReader struct {
-	entries   []handoffEntry
-	truncated bool
-	pi        bool
-	parents   map[string]string
-	leaf      string
+	entries              []handoffEntry
+	truncated            bool
+	pi                   bool
+	parents              map[string]string
+	leaf                 string
+	source               Session
+	codexMetadataSeen    bool
+	firstCodexPromptSeen bool
 }
 
 func ReadHandoff(session Session) (Handoff, error) {
@@ -76,7 +80,7 @@ func ReadHandoff(session Session) (Handoff, error) {
 	if !info.Mode().IsRegular() {
 		return Handoff{}, errors.New("the session transcript is not a regular file")
 	}
-	reader := handoffReader{pi: string(session.Harness) == "pi", parents: map[string]string{}}
+	reader := handoffReader{pi: string(session.Harness) == "pi", parents: map[string]string{}, source: session}
 	if info.Size() <= handoffReadLimit {
 		data, readErr := io.ReadAll(io.LimitReader(file, handoffReadLimit+1))
 		if readErr != nil {
@@ -96,6 +100,7 @@ func ReadHandoff(session Session) (Handoff, error) {
 			return Handoff{}, fmt.Errorf("read session transcript: %w", readErr)
 		}
 		reader.read(handoffCompleteHead(head[:count]))
+		reader.firstCodexPromptSeen = true
 		tail := make([]byte, handoffReadLimit/2)
 		tailOffset := info.Size() - int64(len(tail))
 		count, readErr = file.ReadAt(tail, tailOffset)
@@ -173,6 +178,14 @@ func (reader *handoffReader) record(data []byte, depth int) {
 		reader.leaf = envelope.ID
 	}
 	switch envelope.Type {
+	case "session_meta":
+		if reader.source.Harness == Codex && reader.source.Originator == "" && !reader.codexMetadataSeen {
+			reader.codexMetadataSeen = true
+			var metadata struct{ ID, Originator string }
+			if json.Unmarshal(envelope.Payload, &metadata) == nil && metadata.ID != "" && (reader.source.ID == "" || reader.source.ID == metadata.ID) {
+				reader.source.Originator = metadata.Originator
+			}
+		}
 	case "response_item":
 		var message handoffEnvelope
 		if json.Unmarshal(envelope.Payload, &message) == nil && message.Type == "message" {
@@ -191,7 +204,11 @@ func (reader *handoffReader) record(data []byte, depth int) {
 			role = "assistant"
 		}
 		if role != "" {
-			reader.add(role, handoffCleanText(event.Message), 'e', "")
+			var decoded string
+			if role == "user" {
+				decoded = reader.source.decodedCodexPrompt(event.Message, 0)
+			}
+			reader.add(HandoffMessage{Role: role, Text: event.Message}, 'e', "", decoded)
 		}
 	case "", "message", "user", "assistant":
 		if len(envelope.Message) > 0 {
@@ -221,27 +238,48 @@ func (reader *handoffReader) message(message handoffEnvelope, origin byte, id st
 	if message.Role != "user" && message.Role != "assistant" {
 		return
 	}
-	text := ""
+	var text, decoded string
+	var parts []transcriptTextPart
 	if len(message.Content) > 0 {
 		if json.Unmarshal(message.Content, &text) != nil {
-			var parts []struct{ Type, Text string }
 			if json.Unmarshal(message.Content, &parts) != nil {
 				return
 			}
 			var texts []string
 			for _, part := range parts {
 				if part.Type == "text" || part.Type == "input_text" || part.Type == "output_text" {
-					if cleaned := handoffCleanText(part.Text); cleaned != "" {
+					if len(parts) == 1 && message.Role == "user" && reader.source.fiveLeafCodex() {
+						text = part.Text
+					} else if cleaned := handoffCleanText(part.Text); cleaned != "" {
 						texts = append(texts, cleaned)
 					}
 				}
 			}
-			text = strings.Join(texts, "\n\n")
+			if len(texts) > 0 {
+				text = strings.Join(texts, "\n\n")
+			}
 		}
 	} else {
 		text = message.Text
 	}
-	reader.add(message.Role, handoffCleanText(text), origin, id)
+	if origin == 'r' && message.Role == "user" {
+		if len(parts) == 0 {
+			decoded = reader.source.decodedCodexPrompt(text, 0)
+		} else {
+			decoded = reader.source.decodeCodexPromptParts(parts)
+			if decoded != "" && len(parts) == 2 {
+				text = parts[0].Text + parts[1].Text
+			}
+		}
+	}
+	public := HandoffMessage{Role: message.Role, Text: text}
+	if reader.source.Harness == Codex && origin == 'r' && public.Role == "assistant" {
+		switch message.Phase {
+		case "commentary", "final_answer":
+			public.Phase = message.Phase
+		}
+	}
+	reader.add(public, origin, id, decoded)
 }
 
 func handoffCleanText(text string) string {
@@ -264,11 +302,18 @@ func handoffCleanText(text string) string {
 	return text
 }
 
-func (reader *handoffReader) add(role, text string, origin byte, id string) {
-	if text == "" {
+func (reader *handoffReader) add(message HandoffMessage, origin byte, id, decoded string) {
+	role, text := message.Role, message.Text
+	cleaned := handoffCleanText(text)
+	if cleaned == "" {
 		return
 	}
-	digest := sha256.Sum256([]byte(text))
+	fiveLeafUser := role == "user" && reader.source.fiveLeafCodex()
+	firstCodexPrompt := fiveLeafUser && !reader.firstCodexPromptSeen
+	if !fiveLeafUser || cleaned != strings.TrimSpace(text) {
+		text = cleaned
+	}
+	digest := sha256.Sum256([]byte(cleaned))
 	if origin != 0 {
 		for previous := len(reader.entries) - 1; previous >= max(0, len(reader.entries)-8); previous-- {
 			entry := &reader.entries[previous]
@@ -286,16 +331,24 @@ func (reader *handoffReader) add(role, text string, origin byte, id string) {
 				return
 			}
 			entry.dropped = true
+			firstCodexPrompt = entry.firstCodexPrompt
 			origin = 0
 			break
+		}
+	}
+	if firstCodexPrompt {
+		reader.firstCodexPromptSeen = true
+		if decoded != "" {
+			text = decoded
 		}
 	}
 	if len(text) > handoffMessageText {
 		reader.truncated = true
 		text = handoffShorten(text, handoffMessageText)
 	}
+	message.Text = text
 	reader.entries = append(reader.entries, handoffEntry{
-		HandoffMessage: HandoffMessage{Role: role, Text: text}, origin: origin, digest: digest, id: id,
+		HandoffMessage: message, origin: origin, digest: digest, id: id, firstCodexPrompt: firstCodexPrompt,
 	})
 }
 

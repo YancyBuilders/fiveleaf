@@ -76,22 +76,29 @@ func TestChatAutoConnectFailureNeedsExplicitRetry(t *testing.T) {
 }
 
 func TestChatAutoConnectHonorsStopAndRemote(t *testing.T) {
-	hs, logPath := agentRoleHarness(t, "acp")
+	hs, logPath, gate := lifecycleHarness(t, "hold-first-new")
 	a, chat := hs.a, hs.a.agent
 	a.root = remote.Path("example", "/workspace")
 	a.openAgentPage()
-	requireChatHandshakes(t, logPath, 0)
-	if chat.connecting || chat.connectionAttempted {
+	if chat.connecting || chat.connectionAttempted || len(lifecycleEvents(t, logPath)) != 0 {
 		t.Fatal("a remote workspace attempted to launch a local agent")
 	}
 	a.root = hs.root
 	a.openAgentPage()
-	a.stopChat(chat)
+	hs.untilLong("pending first session", func() bool { return lifecycleHas(lifecycleEvents(t, logPath), "new", "lifecycle-1") })
+	chat.draft = "keep this question unsent"
 	generation := chat.generation
+	a.stopChat(chat)
+	if !chat.connecting || !chat.stopping || chat.generation != generation {
+		t.Fatal("Stop replaced or abandoned the pending connection")
+	}
 	a.openAgentPage()
-	hs.settle()
-	if chat.generation != generation || chat.client != nil || chat.connecting || chat.err != locales.AgentStopped() {
-		t.Fatal("focusing a stopped chat restarted it")
+	releaseLifecycleGate(t, gate)
+	hs.untilLong("initial session after Stop", func() bool { return !chat.connecting })
+	events := lifecycleEvents(t, logPath)
+	if chat.generation != generation || chat.client == nil || chat.sessionID != "lifecycle-1" || chat.stopping ||
+		chat.draft != "keep this question unsent" || len(events) != 1 {
+		t.Fatalf("opening the stopped chat changed the draft or connection: draft=%q session=%q events=%+v", chat.draft, chat.sessionID, events)
 	}
 }
 

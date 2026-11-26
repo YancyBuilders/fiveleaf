@@ -8,9 +8,20 @@ type agentContextSnapshot struct {
 	model                              string
 	compactionKnown, compactionEnabled bool
 	compactAt                          int
+	compactionStatus                   agentCompactionStatus
 	estimated                          bool
 	categories                         []agentContextCategory
 }
+
+type agentCompactionStatus uint8
+
+const (
+	agentCompactionUnreported agentCompactionStatus = iota
+	agentCompactionManaged
+	agentCompactionRunning
+	agentCompactionCompleted
+	agentCompactionFailed
+)
 
 type agentContextCategory struct {
 	kind   string

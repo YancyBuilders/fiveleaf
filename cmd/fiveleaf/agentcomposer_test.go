@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"fiveleaf/internal/acp"
 	"fiveleaf/locales"
@@ -205,6 +206,178 @@ func TestAgentComposerFooterFitsWithoutOverlap(t *testing.T) {
 			}
 			controls = append(controls, r)
 		}
+	}
+}
+
+func TestAgentComposerCaretAndFocusStayVisible(t *testing.T) {
+	withAppearancePlugins(t)
+	for _, dark := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dark=%v", dark), func(t *testing.T) {
+			hs := newHarness(t, dark)
+			if dark {
+				hs.a.setTheme(themeOneDarkPro)
+			}
+			hs.a.settings.MicaEnabled, hs.a.settings.MicaAnimation = true, false
+			agentViewFixture(hs)
+			hs.settle()
+			hs.clickDetail(locales.AgentDraft())
+			hs.tt.Type("draft")
+			hs.tt.Frame()
+			for _, delay := range []time.Duration{0, 700 * time.Millisecond, 31 * time.Second} {
+				hs.tt.Advance(delay)
+				hs.tt.Frame()
+				caret, ok := hs.tt.TextCaret()
+				if !ok || !hs.tt.Focused(locales.AgentDraft()) {
+					t.Fatal("the draft lost text input focus")
+				}
+				frame := hs.tt.Image()
+				pixel := func(x, y int) ui.Color {
+					color := frame.RGBAAt(x, y)
+					return ui.RGB(color.R, color.G, color.B)
+				}
+				left := int(math.Round(float64(caret.X)))
+				middle := int(caret.Y + caret.H/2)
+				background := pixel(left+4, middle)
+				for column := left; column < left+2; column++ {
+					if ratio := contrast(pixel(column, middle), background); ratio < 4.5 {
+						t.Errorf("at %v, caret column %d has contrast %.2f:1", delay, column-left, ratio)
+					}
+				}
+				box := hs.a.agent.composeBox.Bounds(hs.a.review.ctx)
+				edge, row := int(math.Round(float64(box.X))), int(box.Y+box.H/2)
+				if ratio := contrast(pixel(edge, row), pixel(edge+4, row)); ratio < 3 {
+					t.Errorf("at %v, focus edge has contrast %.2f:1", delay, ratio)
+				}
+			}
+			hs.shot(fmt.Sprintf("agent-composer-caret-mica-dark-%v", dark))
+		})
+	}
+}
+
+func TestAgentComposerLongPastesStayEditable(t *testing.T) {
+	for _, specimen := range []struct{ name, text string }{
+		{"multiline", strings.Repeat("2026-11-25 INFO handled /workspace/request\n", 90)},
+		{"unbroken", strings.Repeat("abc0123456789界", 1024)},
+	} {
+		t.Run(specimen.name, func(t *testing.T) {
+			hs := newHarness(t, true)
+			agentViewFixture(hs)
+			sizeChatWorkspace(hs, 600)
+			hs.settle()
+			hs.clickDetail(locales.AgentDraft())
+			const draft = "replace this draft"
+			hs.tt.Type(draft)
+			hs.command("selectAll")
+			before := hs.detailBounds(locales.AgentDraft())
+			beforeSend := hs.detailBounds(locales.AgentSend())
+			hs.tt.SetClipboard(specimen.text)
+			hs.command("paste")
+			input := hs.detailBounds(locales.AgentDraft())
+			send := hs.detailBounds(locales.AgentSend())
+			if input.H < before.H+40 || input.H > 150 || send.Y < input.Y+input.H || send.Y != beforeSend.Y {
+				t.Fatalf("long paste should expand upward with a bounded height: before=%+v input=%+v send=%+v", before, input, send)
+			}
+			chat := hs.a.agent
+			if chat.draft != specimen.text || len(chat.sources.draft.refs) != 0 {
+				t.Fatalf("paste changed the text or made it an attachment, draft bytes=%d", len(chat.draft))
+			}
+			hs.shot("agent-composer-long-" + specimen.name)
+			hs.key(ui.Ctrl, ui.KeyHome)
+			if caret, ok := hs.tt.TextCaret(); !ok || caret.Y < input.Y || caret.Y+caret.H > input.Y+input.H {
+				t.Fatalf("the start of the pasted draft isn't in view: caret=%+v input=%+v", caret, input)
+			}
+			hs.tt.Type("备注 ")
+			hs.settle()
+			if chat.draft != "备注 "+specimen.text {
+				t.Fatal("could not edit the start of the pasted draft")
+			}
+			hs.command("undo")
+			hs.command("undo")
+			if chat.draft != draft || hs.detailBounds(locales.AgentDraft()).H != before.H {
+				t.Fatal("undo did not restore the original draft and input height")
+			}
+		})
+	}
+}
+
+func TestAgentComposerFoldsLongPasteAndSendsOriginal(t *testing.T) {
+	hs, logPath, _ := lifecycleHarness(t, "codex-native")
+	hs.a.openAgentPage()
+	chat := hs.a.agent
+	hs.untilLong("Codex session connected", func() bool { return chat.sessionID != "" })
+	hs.clickDetail(locales.AgentDraft())
+	const note = "Compare these logs"
+	hs.tt.Type(note)
+	before := hs.detailBounds(locales.AgentDraft())
+	const start = "first line with leading whitespace\t  "
+	text := start + "\n" + strings.Repeat("2026-11-25 看请求日志 🧪\n", 150) + "last line\n\n"
+	hs.tt.SetClipboard(text)
+	hs.command("paste")
+	label := locales.AgentPasteText(strings.Count(text, "\n") + 1)
+	hs.until("folded paste", func() bool { return len(chat.sources.draft.pastes) == 1 && hs.tt.HasText(label) })
+	if chat.draft != note || hs.detailBounds(locales.AgentDraft()).H != before.H {
+		t.Fatal("folded paste changed the text or height of the draft input")
+	}
+	hs.shot("agent-paste-folded")
+	hs.clickDetail(label)
+	if chat.expandedPaste == nil || !strings.HasPrefix(chat.expandedPaste.preview, start) {
+		t.Fatal("the pasted text preview did not open")
+	}
+	hs.shot("agent-paste-expanded")
+	hs.clickDetail(locales.AgentPasteRemove())
+	if len(chat.sources.draft.pastes) != 0 || chat.draft != note || chat.expandedPaste != nil {
+		t.Fatal("removing a paste changed the draft or left the preview open")
+	}
+	hs.tt.SetClipboard(text)
+	hs.command("paste")
+	hs.until("reattached paste", func() bool { return len(chat.sources.draft.pastes) == 1 })
+	hs.key(0, ui.KeyEnter)
+	hs.untilLong("reply containing pasted text", func() bool { return chat.turn == 1 && !chat.requestInFlight() })
+	events := lifecycleEvents(t, logPath)
+	if len(events) != 2 || events[1].Kind != "prompt" || events[1].Text != note+"\n\n"+text || chat.hasDraft() {
+		t.Fatalf("sending folded paste changed the content or left a draft: events=%d draft=%q error=%q", len(events), chat.draft, chat.err)
+	}
+}
+
+func TestAgentComposerRestoresPastedTextBeforeDispatch(t *testing.T) {
+	text := strings.Repeat("original context \n", 30)
+	first := &chatDraftPaste{text: text}
+	second := &chatDraftPaste{text: "new context\n"}
+	chat := &agentChat{}
+	chat.sources.draft.pastes = []*chatDraftPaste{first}
+	prompt := chat.draftPrompt()
+	chat.stageDetailSources()
+	chat.draft = "new draft"
+	chat.sources.draft.pastes = []*chatDraftPaste{second}
+	restoreChatDraft(chat, prompt)
+	if chat.draft != "new draft" || chat.draftPrompt() != "new draft\n\n"+text+"\n\n"+second.text {
+		t.Fatalf("restored paste duplicated or displaced content: draft=%q prompt=%q", chat.draft, chat.draftPrompt())
+	}
+}
+
+func TestAgentComposerEditingPastePreservesBlockOrder(t *testing.T) {
+	hs, logPath, _ := lifecycleHarness(t, "codex-native")
+	hs.a.openAgentPage()
+	chat := hs.a.agent
+	hs.untilLong("Codex session connected", func() bool { return chat.sessionID != "" })
+	hs.clickDetail(locales.AgentDraft())
+	const note = "Read these in order"
+	hs.tt.Type(note)
+	first, second, third := strings.Repeat("first \n", 21), strings.Repeat("second\n", 22), strings.Repeat("third\n", 23)
+	for _, text := range []string{first, second, third} {
+		hs.tt.SetClipboard(text)
+		hs.command("paste")
+	}
+	hs.clickDetail(locales.AgentPasteText(23))
+	hs.clickDetail(locales.AgentPasteEdit())
+	if chat.draft != note+"\n\n"+first+"\n\n"+second || len(chat.sources.draft.pastes) != 1 || chat.sources.draft.pastes[0].text != third {
+		t.Fatal("editing the middle attachment moved it before an earlier paste")
+	}
+	hs.key(0, ui.KeyEnter)
+	hs.untilLong("reply containing ordered pastes", func() bool { return chat.turn == 1 && !chat.requestInFlight() })
+	events := lifecycleEvents(t, logPath)
+	if len(events) != 2 || events[1].Text != note+"\n\n"+first+"\n\n"+second+"\n\n"+third {
+		t.Fatal("the ACP prompt did not receive all paste blocks in order")
 	}
 }
 

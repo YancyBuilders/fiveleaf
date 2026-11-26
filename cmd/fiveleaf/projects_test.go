@@ -283,7 +283,7 @@ func writeLines(t *testing.T, path string, n int) {
 
 func TestProjectWords(t *testing.T) {
 	for name, want := range map[string]string{
-		"fiveleaf": "M", "my-app": "MA", "fiveleaf_editor": "ME", "fiveleafEditor": "ME", "go.dev": "GD", "": "?",
+		"fiveleaf": "F", "my-app": "MA", "fiveleaf_editor": "FE", "fiveleafEditor": "FE", "go.dev": "GD", "": "?",
 	} {
 		if got := initials(projectWords(name)); got != want {
 			t.Errorf("%q: %q, want %q", name, got, want)
@@ -295,7 +295,7 @@ func TestProjectWords(t *testing.T) {
 // are the same, and labels names the same alike.
 func TestRailLabels(t *testing.T) {
 	for _, tc := range []struct{ names, want []string }{
-		{[]string{"fiveleaf", "my-app", "go"}, []string{"Ma", "MA", "Go"}},
+		{[]string{"fiveleaf", "my-app", "go"}, []string{"Fi", "MA", "Go"}},
 		{[]string{"Downloads", "Documents", "Desktop"}, []string{"Dw", "Dc", "De"}},
 		{[]string{"Downloads", "Downloads", "Desktop"}, []string{"Do", "Do", "De"}},
 		{[]string{"Downloads", "Documents", "Downloads"}, []string{"Dw", "Dc", "Dw"}},

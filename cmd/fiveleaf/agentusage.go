@@ -17,16 +17,36 @@ func (a *app) refreshAgentUsage(s *agentChat) {
 	}
 	usage, ok := s.client.UsageState(s.sessionID)
 	if !ok {
-		s.contextUsage = nil
 		return
+	}
+	if usage.Used == 0 && !s.sessionPrompted && s.contextUsage == nil {
+		return
+	}
+	if s.usesCodexThread() {
+		if tokens, found := s.client.PromptUsage(s.sessionID); found {
+			usage = agentContextOccupancy(true, tokens, usage)
+		}
+	}
+	if s.usesPiThread() && s.connected != nil {
+		if size, found := piContextWindow(s.connected.config, a.root, s.model(), usage.Size); found {
+			usage.Size = size
+		}
 	}
 	s.contextUsage = &usage
 }
 
-func (s *agentChat) acceptContextUsage(usage acp.UsageState) {
-	if usage.Used >= 0 && usage.Size > 0 {
-		s.contextUsage = &usage
+func agentContextOccupancy(codex bool, prompt acp.PromptUsage, usage acp.UsageState) acp.UsageState {
+	if codex && prompt.Input+prompt.CachedInput > 0 {
+		usage.Used = prompt.Input + prompt.CachedInput
 	}
+	return usage
+}
+
+func (s *agentChat) acceptContextUsage(usage acp.UsageState) {
+	if usage.Used < 0 || usage.Size <= 0 {
+		return
+	}
+	s.contextUsage = &usage
 }
 
 func agentTokenCount(value int) string {
@@ -66,8 +86,14 @@ func (a *app) agentContextUsage(c *ui.Context, s *agentChat) ui.Element {
 			color = p.modifiedFg
 		}
 	}
+	if s.usesCodexThread() {
+		tooltip += "\n" + locales.AgentContextCodexUsageHint()
+	}
 	if snapshot.compactionKnown {
 		tooltip += "\n" + locales.AgentContextCompactionHint()
+	}
+	if status := agentContextCompactionStatusLabel(snapshot.compactionStatus); status != "" {
+		tooltip += "\n" + status
 	}
 	inset := m.radiusCard + m.pad + m.gap/2
 	button := ui.ButtonBase(c.Key("agent-context-usage")).Column().FillWidth().Height(m.row).MinWidth(0).Shrink(0).

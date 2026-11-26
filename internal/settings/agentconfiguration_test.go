@@ -86,7 +86,7 @@ func TestAgentConfigurationImportMergesWithoutOverwriting(t *testing.T) {
 		"keep": {Command: "existing"},
 		"same": {Command: "tool", Args: []string{}, Env: map[string]string{}, Capabilities: []string{"code", "reasoning"}},
 	}
-	matching := []byte(`{"version":1,"agentServers":{"new":{"command":"new-tool"},"same":{"command":"tool","protocol":"acp","timeoutSeconds":120,"capabilities":["reasoning","code"]}}}`)
+	matching := []byte(`{"version":1,"agentServers":{"new":{"command":"new-tool"},"same":{"command":"tool","protocol":"acp","timeoutSeconds":0,"capabilities":["reasoning","code"]}}}`)
 	if err := p.ImportAgents(matching); err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +100,10 @@ func TestAgentConfigurationImportMergesWithoutOverwriting(t *testing.T) {
 	}
 	if !reflect.DeepEqual(before, p.AgentServers) {
 		t.Fatal("failed import partially applied the file")
+	}
+	timed := []byte(`{"version":1,"agentServers":{"same":{"command":"tool","timeoutSeconds":120,"capabilities":["reasoning","code"]}}}`)
+	if err := p.ImportAgents(timed); err == nil {
+		t.Fatal("explicit ACP timeout matched a definition that waits indefinitely")
 	}
 }
 
