@@ -2,7 +2,7 @@
   "name": "FiveLeaf",
   "slug": "fiveleaf",
   "identifier": "dev.fiveleaf.editor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "main": "./cmd/fiveleaf",
   "urlSchemes": ["fiveleaf"],
   "fileAssociations": [

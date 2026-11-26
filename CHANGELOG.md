@@ -3,7 +3,7 @@
 The update window shows the section of the version it offers. Every release
 needs a `## <version>` section here, or its build fails.
 
-## Unreleased
+## 0.1.1
 
 - The Agent input has a clearer caret and grows as you paste or type multiple lines.
 - ACP replies keep running while the agent reports progress or waits for your approval.
